@@ -1,0 +1,73 @@
+/* static/style.css */
+:root {
+    --bg-dark: #121212;
+    --card-bg: #1e1e1e;
+    --text-main: #e0e0e0;
+    --accent-blue: #3b82f6;
+    --accent-green: #10b981;
+    --accent-red: #ef4444;
+    --border-color: #2d2d2d;
+}
+
+body {
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* Glassmorphism Cards */
+.card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+}
+
+.card-header {
+    background-color: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+/* Custom Typography */
+h2.card-text {
+    font-size: 2.5rem;
+    font-weight: 700;
+}
+
+/* Specific Card Styling */
+.metric-primary { border-bottom: 3px solid var(--accent-blue); }
+.metric-success { border-bottom: 3px solid var(--accent-green); }
+.metric-danger { border-bottom: 3px solid var(--accent-red); }
+
+/* Table Styling */
+.table {
+    color: var(--text-main);
+    margin-bottom: 0;
+}
+.table-hover tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: white;
+}
+.table td, .table th {
+    border-bottom-color: var(--border-color);
+    vertical-align: middle;
+}
+.table-light th {
+    background-color: #252525;
+    color: #a0a0a0;
+    border-bottom: 2px solid var(--border-color);
+}
+
+/* Custom Scrollbar for Ubuntu */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-dark); }
+::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }

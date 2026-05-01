@@ -1,35 +1,43 @@
 # main.py
 import time
-from routers import orders
 from fastapi import FastAPI, Request
-from routers import orders, telemetry # Updated import
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse
+
 from database import engine, Base, SessionLocal
 from models import SystemLog
 import models
+from routers import orders, telemetry
 
-# Automatically generate tables in SQL Server on startup
-# (In production, use Alembic migrations instead)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="CafeSync Technical Monitoring API")
+
+# --- UI CONFIGURATION (NEW) ---
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+@app.get("/dashboard", response_class=HTMLResponse, tags=["UI"])
+async def render_dashboard(request: Request):
+    """Renders the HTML monitoring dashboard."""
+    # Enforcing strict keyword arguments to satisfy modern Starlette signatures
+    return templates.TemplateResponse(
+        request=request, 
+        name="dashboard.html"
+    )
+# ------------------------------
 
 app.include_router(orders.router)
 app.include_router(telemetry.router)
 
 @app.middleware("http")
 async def add_telemetry_middleware(request: Request, call_next):
-    """
-    Pod 2 Requirement: Intercepts requests, measures latency, 
-    and writes telemetry data to the SQL Server database.
-    """
+    # [YOUR EXISTING MIDDLEWARE CODE REMAINS EXACTLY THE SAME]
     start_time = time.time()
-    
-    # Execute the actual endpoint
     response = await call_next(request)
-    
     process_time_ms = (time.time() - start_time) * 1000
     
-    # Log to database asynchronously-safe block
     db = SessionLocal()
     try:
         log_entry = SystemLog(

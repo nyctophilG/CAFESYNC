@@ -1,0 +1,22 @@
+# Python Environments
+venv/
+env/
+.env
+
+# Python Byte-compiled / Optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE / Editor
+.vscode/
+*.swp
+*.swo
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
+
+# Logs and Databases
+*.log
+*.sqlite3

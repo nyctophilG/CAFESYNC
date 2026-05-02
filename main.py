@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
-
+from fastapi.responses import RedirectResponse
 from database import engine, Base, SessionLocal
 from models import SystemLog
 import models
@@ -52,6 +52,11 @@ async def add_telemetry_middleware(request: Request, call_next):
         db.close()
         
     return response
+
+@app.get("/", include_in_schema=False)
+def root_redirect():
+    """Automatically redirects the base URL to the Operations Dashboard."""
+    return RedirectResponse(url="/dashboard")
 
 @app.get("/health")
 def health_check():

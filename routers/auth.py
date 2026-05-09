@@ -14,43 +14,29 @@ from roles import Role, STAFF_ROLES
 router = APIRouter(tags=["Authentication"])
 templates = Jinja2Templates(directory="templates")
 
-# Session lifetimes (seconds)
-SESSION_LIFETIME_SHORT = 8 * 60 * 60        # 8 hours
-SESSION_LIFETIME_LONG = 30 * 24 * 60 * 60   # 30 days
+# Session lifetimes (kept in sync with routers/twofa.py)
+SESSION_LIFETIME_SHORT = 8 * 60 * 60
+SESSION_LIFETIME_LONG = 30 * 24 * 60 * 60
 
-# Minimum password length. bcrypt itself imposes no minimum, but very short
-# passwords are a wide-open door. Tune as needed.
+# Minimum password length for new accounts.
 MIN_PASSWORD_LENGTH = 8
 
 
 def _post_login_redirect(role: str) -> str:
-    """Where to send a user immediately after successful login or signup.
-
-    Staff (admin/barista) go to the dashboard. Customers don't have a UI
-    in this build — they're API-only — so we send them back to the login
-    page with a banner indicating success.
-    """
     if role in STAFF_ROLES:
         return "/dashboard"
-    # Customer or any other non-staff role: no UI to land on.
     return "/login?signed_in=1"
 
 
 @router.get("/login", response_class=HTMLResponse, include_in_schema=False)
 async def login_page(request: Request, signed_in: int = 0):
-    # If already logged in AS STAFF, send them to the dashboard. We deliberately
-    # don't redirect non-staff (customers) here — for them /login IS the
-    # destination, and redirecting would create a loop since
-    # _post_login_redirect("customer") returns "/login?signed_in=1".
     user_id = request.session.get("user_id")
     role = request.session.get("role")
     if user_id and role in STAFF_ROLES:
         return RedirectResponse(url="/dashboard", status_code=302)
 
-    # Defensive: if user_id is set but role is missing, the session is corrupt
-    # (e.g. left over from before role tracking). Clear it so login can proceed
-    # normally instead of getting stuck in a half-authenticated state.
     if user_id and not role:
+        # Corrupt session — clear and fall through to render login form.
         request.session.clear()
 
     notice = None
@@ -83,12 +69,23 @@ async def login_submit(
             status_code=401,
         )
 
-    # Successful login — store minimal identifiers in the signed session cookie.
+    # Password verified. Branch on whether 2FA is enabled.
+    if user.totp_enabled:
+        # Stash a "pending" identity in the session and redirect to the
+        # challenge page. Crucially: we DO NOT set user_id yet, so the
+        # auth_gate middleware still treats this as unauthenticated for
+        # any other route.
+        request.session.clear()  # wipe any prior partial state
+        request.session["pending_user_id"] = user.id
+        request.session["pending_at"] = int(time.time())
+        request.session["pending_remember_me"] = bool(remember_me)
+        return RedirectResponse(url="/login/2fa", status_code=302)
+
+    # No 2FA — log in immediately.
     request.session["user_id"] = user.id
     request.session["username"] = user.username
     request.session["role"] = user.role
 
-    # Per-session expiry, since SessionMiddleware only supports one global max_age.
     if remember_me:
         request.session["expires_at"] = int(time.time()) + SESSION_LIFETIME_LONG
     else:
@@ -104,8 +101,6 @@ async def signup_page(request: Request):
     if user_id and role in STAFF_ROLES:
         return RedirectResponse(url="/dashboard", status_code=302)
     if user_id:
-        # Customer or corrupt session: send them to /login rather than letting
-        # them re-signup while already authenticated.
         return RedirectResponse(url="/login?signed_in=1", status_code=302)
     return templates.TemplateResponse(
         request=request,
@@ -123,7 +118,6 @@ async def signup_submit(
 ):
     username = username.strip()
 
-    # Input validation. Errors are user-visible, so phrase them helpfully.
     error = None
     if len(username) < 3:
         error = "Username must be at least 3 characters."
@@ -140,8 +134,6 @@ async def signup_submit(
             status_code=400,
         )
 
-    # All new signups land in the "customer" role. Promotion to barista or
-    # admin is done by an existing admin via the user management UI.
     new_user = models.User(
         username=username,
         hashed_password=hash_password(password),
@@ -151,7 +143,6 @@ async def signup_submit(
     try:
         db.commit()
     except IntegrityError:
-        # Unique-constraint on username failed.
         db.rollback()
         return templates.TemplateResponse(
             request=request,
@@ -161,9 +152,7 @@ async def signup_submit(
         )
     db.refresh(new_user)
 
-    # Auto-login after signup, then redirect by role (customers get the
-    # banner, staff get the dashboard — though signup always creates a
-    # customer, this future-proofs the flow).
+    # Auto-login. Customers don't have 2FA at signup time, so no challenge step.
     request.session["user_id"] = new_user.id
     request.session["username"] = new_user.username
     request.session["role"] = new_user.role

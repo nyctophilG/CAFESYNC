@@ -1,11 +1,10 @@
 # main.py
 import time
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
-from sqlalchemy.orm import Session
 
 from database import (
     engine, Base, SessionLocal,
@@ -13,48 +12,37 @@ from database import (
 )
 from models import SystemLog
 import models
-from routers import orders, telemetry, auth, users
-from auth_utils import seed_initial_admin, require_staff
+from routers import orders, telemetry, auth, users, twofa, passkeys
+from auth_utils import seed_initial_admin
 from routers.auth import SESSION_LIFETIME_LONG
 from roles import Role, STAFF_ROLES
 
 Base.metadata.create_all(bind=engine)
-
-# Seed the bootstrap admin from .env if no admin exists yet.
 seed_initial_admin(ADMIN_USERNAME, ADMIN_PASSWORD)
 
 app = FastAPI(title="CafeSync Technical Monitoring API")
 
-# --- UI CONFIGURATION ---
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # --- AUTH GATE ---
-# Public paths: no authentication required.
-PUBLIC_PATHS = {"/health", "/login", "/logout", "/signup"}
+# Public paths: /login/2fa is mid-login (no session yet). The passkey
+# login endpoints are public because they ARE the authentication —
+# verifying a passkey is what creates the session.
+PUBLIC_PATHS = {
+    "/health", "/login", "/logout", "/signup",
+    "/login/2fa",
+    "/passkey/login/begin",
+    "/passkey/login/complete",
+}
 
-# Routes that should return JSON 401/403 instead of an HTML redirect when
-# auth fails. These are the API surfaces consumed by app.js and external
-# API clients.
-API_PREFIXES = ("/orders", "/telemetry", "/users")
-
-# Dashboard / UI paths that customers should NOT be able to reach. The
-# auth gate redirects them to /login with a notice instead of letting
-# them see a partial page or an error.
+API_PREFIXES = ("/orders", "/telemetry", "/users", "/passkey")
 STAFF_ONLY_UI_PATHS = {"/dashboard", "/"}
 
 
 @app.middleware("http")
 async def auth_gate_middleware(request: Request, call_next):
-    """Enforces authentication and broad role checks before the request
-    reaches the route. Per-endpoint role enforcement (admin vs barista)
-    is handled by the dependencies in the routers.
-
-    Registered AFTER the telemetry middleware below, so in Starlette's
-    last-registered-runs-first ordering, this runs FIRST. Failed-auth
-    requests short-circuit before telemetry logs them, keeping the
-    latency/error metrics clean.
-    """
+    """Auth gating. Per-endpoint role checks happen in the routers."""
     path = request.url.path
 
     is_public = (
@@ -63,7 +51,6 @@ async def auth_gate_middleware(request: Request, call_next):
         or path == "/docs"
         or path == "/openapi.json"
     )
-
     if is_public:
         return await call_next(request)
 
@@ -71,16 +58,11 @@ async def auth_gate_middleware(request: Request, call_next):
     expires_at = request.session.get("expires_at")
     role = request.session.get("role")
 
-    # Per-session expiry. SessionMiddleware only supports one global
-    # max_age, so we enforce the short window here.
     if user_id and expires_at and time.time() > expires_at:
         request.session.clear()
         user_id = None
         role = None
 
-    # Defensive: a session with user_id but no role is corrupt (e.g. left
-    # over from a pre-RBAC version). Treat it as unauthenticated so the
-    # user can log in fresh, instead of getting stuck in a redirect loop.
     if user_id and not role:
         request.session.clear()
         user_id = None
@@ -88,14 +70,9 @@ async def auth_gate_middleware(request: Request, call_next):
 
     if not user_id:
         if any(path.startswith(prefix) for prefix in API_PREFIXES):
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Not authenticated"},
-            )
+            return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
         return RedirectResponse(url="/login", status_code=302)
 
-    # Customer hitting a staff-only UI path: bounce them back to login.
-    # We don't show them a 403 page since there's no UI for them anyway.
     if path in STAFF_ONLY_UI_PATHS and role not in STAFF_ROLES:
         return RedirectResponse(url="/login?signed_in=1", status_code=302)
 
@@ -103,7 +80,10 @@ async def auth_gate_middleware(request: Request, call_next):
 
 
 # --- TELEMETRY ---
-TELEMETRY_EXCLUDED_PATHS = {"/health", "/dashboard", "/", "/login", "/logout", "/signup"}
+TELEMETRY_EXCLUDED_PATHS = {
+    "/health", "/dashboard", "/", "/login", "/logout", "/signup",
+    "/login/2fa", "/2fa/setup",
+}
 
 @app.middleware("http")
 async def add_telemetry_middleware(request: Request, call_next):
@@ -114,6 +94,8 @@ async def add_telemetry_middleware(request: Request, call_next):
     if (
         request.url.path not in TELEMETRY_EXCLUDED_PATHS
         and not request.url.path.startswith("/static")
+        and not request.url.path.startswith("/2fa/")
+        and not request.url.path.startswith("/passkey/")
     ):
         db = SessionLocal()
         try:
@@ -133,8 +115,6 @@ async def add_telemetry_middleware(request: Request, call_next):
 
 # --- SESSION MIDDLEWARE ---
 # Added LAST so it runs FIRST (Starlette wraps middleware in reverse).
-# Sessions need to be available before the auth gate or telemetry try
-# to read request.session.
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET,
@@ -146,6 +126,8 @@ app.add_middleware(
 
 
 app.include_router(auth.router)
+app.include_router(twofa.router)
+app.include_router(passkeys.router)
 app.include_router(orders.router)
 app.include_router(telemetry.router)
 app.include_router(users.router)
@@ -153,21 +135,12 @@ app.include_router(users.router)
 
 @app.get("/dashboard", response_class=HTMLResponse, tags=["UI"])
 async def render_dashboard(request: Request):
-    """Renders the operations dashboard.
-
-    Two flavors:
-      - admin:   full dashboard (telemetry + orders + user management)
-      - barista: orders panel only (no telemetry, no user mgmt)
-
-    Customers never reach here — the auth gate redirects them to /login.
-    """
     role = request.session.get("role", Role.CUSTOMER)
     username = request.session.get("username", "")
 
     if role == Role.ADMIN:
         template = "dashboard.html"
     else:
-        # Barista. Customers are filtered out by the auth gate before this point.
         template = "dashboard_barista.html"
 
     return templates.TemplateResponse(
@@ -179,8 +152,6 @@ async def render_dashboard(request: Request):
 
 @app.get("/", include_in_schema=False)
 def root_redirect():
-    """Base URL: send to dashboard. Customers will get bounced from there
-    by the auth gate to /login."""
     return RedirectResponse(url="/dashboard")
 
 

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Two-Factor — CafeSync</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-wrapper { width: 100%; max-width: 420px; padding: 1rem; }
+        .login-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.7);
+        }
+        .login-header {
+            text-align: center;
+            padding: 2rem 2rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .login-header .brand-icon {
+            font-size: 2.5rem;
+            color: var(--accent-blue);
+            margin-bottom: 0.5rem;
+        }
+        .login-body { padding: 2rem; }
+        .form-control {
+            background-color: #181818;
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+        }
+        .form-control:focus {
+            background-color: #181818;
+            color: var(--text-main);
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+        }
+        .code-input {
+            text-align: center;
+            font-family: monospace;
+            font-size: 1.4rem;
+            letter-spacing: 0.4em;
+        }
+        .code-input-backup {
+            text-align: center;
+            font-family: monospace;
+            font-size: 1.05rem;
+            letter-spacing: 0.1em;
+        }
+        .btn-login {
+            background-color: var(--accent-blue);
+            border: none;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            padding: 0.6rem;
+        }
+        .btn-login:hover { background-color: #2563eb; }
+        .toggle-link {
+            color: var(--accent-blue);
+            text-decoration: none;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+        }
+        .toggle-link:hover { color: #60a5fa; text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+<div class="login-wrapper">
+    <div class="login-card">
+        <div class="login-header">
+            <i class="bi bi-shield-lock-fill brand-icon"></i>
+            <h4 class="mb-1">Two-factor authentication</h4>
+            <small class="text-muted">Signing in as <strong>{{ username }}</strong></small>
+        </div>
+        <div class="login-body">
+            {% if error %}
+            <div class="alert alert-danger d-flex align-items-center py-2" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <small>{{ error }}</small>
+            </div>
+            {% endif %}
+
+            {# === TOTP form (default) === #}
+            <form method="POST" action="/login/2fa" id="totp-form">
+                <p class="text-muted small mb-3">
+                    Open your authenticator app and enter the 6-digit code.
+                </p>
+                <div class="mb-3">
+                    <input type="text" class="form-control code-input" name="code"
+                           inputmode="numeric" pattern="[0-9]*" maxlength="6" minlength="6"
+                           placeholder="123456" required autofocus>
+                </div>
+                <button type="submit" class="btn btn-login w-100 text-white">
+                    <i class="bi bi-check-circle-fill me-2"></i>Verify
+                </button>
+            </form>
+
+            {# === Backup code form (hidden by default) === #}
+            <form method="POST" action="/login/2fa" id="backup-form" style="display: none;">
+                <input type="hidden" name="use_backup" value="1">
+                <p class="text-muted small mb-3">
+                    Lost your authenticator? Enter one of your backup codes.
+                </p>
+                <div class="mb-3">
+                    <input type="text" class="form-control code-input-backup" name="code"
+                           placeholder="XXXXX-XXXXX" required>
+                </div>
+                <button type="submit" class="btn btn-login w-100 text-white">
+                    <i class="bi bi-key-fill me-2"></i>Use backup code
+                </button>
+            </form>
+
+            <div class="text-center mt-3">
+                <small class="text-muted">
+                    <button type="button" class="toggle-link" onclick="toggleForm()" id="toggle-btn">
+                        Use a backup code instead
+                    </button>
+                </small>
+            </div>
+
+            <hr class="border-secondary my-3">
+
+            <div class="text-center">
+                <small class="text-muted">
+                    <a href="/login" class="toggle-link">Cancel and start over</a>
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let showingBackup = false;
+    function toggleForm() {
+        showingBackup = !showingBackup;
+        document.getElementById('totp-form').style.display = showingBackup ? 'none' : 'block';
+        document.getElementById('backup-form').style.display = showingBackup ? 'block' : 'none';
+        document.getElementById('toggle-btn').innerText = showingBackup
+            ? 'Use authenticator code instead'
+            : 'Use a backup code instead';
+        // Focus the input that's now visible
+        const visibleInput = (showingBackup ? document.getElementById('backup-form') : document.getElementById('totp-form'))
+            .querySelector('input[name="code"]');
+        if (visibleInput) visibleInput.focus();
+    }
+</script>
+
+</body>
+</html>

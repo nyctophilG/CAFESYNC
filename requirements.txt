@@ -1,8 +1,10 @@
 fastapi
 uvicorn[standard]
 sqlalchemy
-pyodbc
 python-dotenv
 bcrypt
 itsdangerous
 python-multipart
+pyotp
+qrcode[pil]
+webauthn

@@ -51,12 +51,41 @@
             padding: 0.6rem;
         }
         .btn-login:hover { background-color: #2563eb; }
+        .btn-passkey {
+            background-color: transparent;
+            border: 1px solid #06b6d4;
+            color: #06b6d4;
+            font-weight: 600;
+            padding: 0.6rem;
+            transition: background-color 0.15s ease;
+        }
+        .btn-passkey:hover {
+            background-color: rgba(6, 182, 212, 0.1);
+            color: #22d3ee;
+            border-color: #22d3ee;
+        }
+        .btn-passkey:disabled { opacity: 0.5; }
         .form-check-input:checked {
             background-color: var(--accent-blue);
             border-color: var(--accent-blue);
         }
         .signup-link { color: var(--accent-blue); text-decoration: none; }
         .signup-link:hover { color: #60a5fa; text-decoration: underline; }
+        .divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            color: var(--text-muted);
+            margin: 1rem 0;
+            font-size: 0.85rem;
+        }
+        .divider::before, .divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .divider:not(:empty)::before { margin-right: 0.75em; }
+        .divider:not(:empty)::after { margin-left: 0.75em; }
     </style>
 </head>
 <body>
@@ -82,6 +111,16 @@
             </div>
             {% endif %}
 
+            <div id="passkey-error" class="alert alert-danger py-2" style="display: none;">
+                <small id="passkey-error-text"></small>
+            </div>
+
+            <button type="button" class="btn btn-passkey w-100 mb-3" id="passkey-btn">
+                <i class="bi bi-fingerprint me-2"></i>Sign in with passkey
+            </button>
+
+            <div class="divider">or with password</div>
+
             <form method="POST" action="/login" autocomplete="on">
                 <div class="mb-3">
                     <label for="username" class="form-label small text-muted text-uppercase fw-bold">Username</label>
@@ -90,7 +129,7 @@
                             <i class="bi bi-person text-muted"></i>
                         </span>
                         <input type="text" class="form-control border-start-0" id="username" name="username"
-                               required autofocus autocomplete="username">
+                               required autocomplete="username">
                     </div>
                 </div>
 
@@ -128,6 +167,33 @@
         <i class="bi bi-shield-lock me-1"></i>Secured session · CafeSync Pod 2
     </p>
 </div>
+
+<script src="/static/passkey.js"></script>
+<script>
+    const passkeyBtn = document.getElementById('passkey-btn');
+    const errEl = document.getElementById('passkey-error');
+    const errText = document.getElementById('passkey-error-text');
+
+    if (!window.cafesyncPasskey || !window.cafesyncPasskey.isSupported()) {
+        passkeyBtn.disabled = true;
+        passkeyBtn.title = 'Your browser does not support passkeys';
+    }
+
+    passkeyBtn.addEventListener('click', async () => {
+        errEl.style.display = 'none';
+        passkeyBtn.disabled = true;
+        passkeyBtn.innerHTML = '<i class="bi bi-fingerprint me-2"></i>Touch your device…';
+        try {
+            await window.cafesyncPasskey.login();
+            // On success, .login() redirects via window.location.href.
+        } catch (err) {
+            errText.innerText = err.message || 'Sign-in failed.';
+            errEl.style.display = 'block';
+            passkeyBtn.disabled = false;
+            passkeyBtn.innerHTML = '<i class="bi bi-fingerprint me-2"></i>Sign in with passkey';
+        }
+    });
+</script>
 
 </body>
 </html>

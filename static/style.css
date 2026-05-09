@@ -5,6 +5,7 @@
     --text-main: #e0e0e0;
     --accent-blue: #3b82f6;
     --accent-green: #10b981;
+    --accent-yellow: #f59e0b;
     --accent-red: #ef4444;
     --border-color: #2d2d2d;
 }
@@ -42,10 +43,14 @@ h2.card-text {
     font-weight: 700;
 }
 
-/* Specific Card Styling */
+/* Metric Card Border Accents */
 .metric-primary { border-bottom: 3px solid var(--accent-blue); }
 .metric-success { border-bottom: 3px solid var(--accent-green); }
-.metric-danger { border-bottom: 3px solid var(--accent-red); }
+/* FIX: Added missing metric-warning class — referenced by app.js for the
+   "Degraded" health state but was never defined, causing the card to render
+   without any bottom border accent. */
+.metric-warning { border-bottom: 3px solid var(--accent-yellow); }
+.metric-danger  { border-bottom: 3px solid var(--accent-red); }
 
 /* Table Styling */
 .table {

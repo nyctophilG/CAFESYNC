@@ -21,28 +21,41 @@ def get_recent_logs(limit: int = 50, db: Session = Depends(get_db)):
 
 @router.get("/metrics")
 def get_system_metrics(db: Session = Depends(get_db)):
-    """Aggregates core performance metrics, including P95 tail latency."""
-    # Calculate average API latency
-    avg_latency = db.query(func.avg(models.SystemLog.response_time_ms)).scalar() or 0.0
+    """Aggregates core performance metrics, including P95 tail latency.
     
-    # Count total requests
+    Note: All metrics (avg, P95, error count) are computed over the same
+    rolling window of the 1000 most recent requests for consistency.
+    """
+    # Use a consistent rolling window of the 1000 most recent logs for all metrics
+    WINDOW = 1000
+
+    recent_logs = db.query(models.SystemLog)\
+                    .order_by(models.SystemLog.timestamp.desc())\
+                    .limit(WINDOW)\
+                    .all()
+
     total_requests = db.query(func.count(models.SystemLog.id)).scalar() or 0
-    
-    # Count 500 Internal Server Errors
-    error_count = db.query(func.count(models.SystemLog.id)).filter(models.SystemLog.status_code >= 500).scalar() or 0
 
-    # Calculate P95 Latency (In-memory rolling window for cross-DB compatibility)
-    recent_latencies = db.query(models.SystemLog.response_time_ms)\
-                         .order_by(models.SystemLog.timestamp.desc())\
-                         .limit(1000)\
-                         .all()
+    if not recent_logs:
+        return {
+            "total_requests": total_requests,
+            "average_latency_ms": 0.0,
+            "p95_latency_ms": 0.0,
+            "error_count": 0,
+            "system_health": "Optimal"
+        }
 
-    p95_latency = 0.0
-    if recent_latencies:
-        # Extract values, sort, and find the 95th percentile index
-        latencies = sorted([row[0] for row in recent_latencies])
-        index = math.ceil(0.95 * len(latencies)) - 1
-        p95_latency = latencies[index]
+    latencies = sorted([log.response_time_ms for log in recent_logs])
+
+    # Average latency over the window
+    avg_latency = sum(latencies) / len(latencies)
+
+    # FIX: Clamp P95 index to valid bounds to prevent off-by-one on small datasets
+    p95_index = min(math.ceil(0.95 * len(latencies)) - 1, len(latencies) - 1)
+    p95_latency = latencies[p95_index]
+
+    # Error count over the same window
+    error_count = sum(1 for log in recent_logs if log.status_code >= 500)
 
     return {
         "total_requests": total_requests,

@@ -1,12 +1,25 @@
 let latencyChartInstance = null;
 
+// Wrapper around fetch that redirects to /login on 401.
+// Without this, an expired session would cause the dashboard to silently
+// stop updating with no indication to the operator.
+async function authedFetch(url, options) {
+    const response = await fetch(url, options);
+    if (response.status === 401) {
+        window.location.href = '/login';
+        // Throw so callers stop processing instead of trying to .json() the redirect.
+        throw new Error('Session expired');
+    }
+    return response;
+}
+
 // Initialize the Chart.js Canvas
 function initChart() {
     const ctx = document.getElementById('latencyChart').getContext('2d');
     
     // Create a sleek blue-to-transparent gradient
     let gradient = ctx.createLinearGradient(0, 0, 0, 400);
-    gradient.addColorStop(0, 'rgba(59, 130, 246, 0.5)'); // Tailwind Blue
+    gradient.addColorStop(0, 'rgba(59, 130, 246, 0.5)');
     gradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
 
     // Global Chart Defaults for Dark Mode
@@ -29,7 +42,7 @@ function initChart() {
                 pointRadius: 4,
                 pointHoverRadius: 6,
                 fill: true,
-                tension: 0.4 // Makes the line smoothly curved
+                tension: 0.4
             }]
         },
         options: {
@@ -46,11 +59,11 @@ function initChart() {
                 }
             },
             scales: {
-                y: { 
+                y: {
                     beginAtZero: true,
                     grid: { color: 'rgba(255, 255, 255, 0.05)' }
                 },
-                x: { 
+                x: {
                     grid: { display: false }
                 }
             }
@@ -61,25 +74,28 @@ function initChart() {
 // Fetch aggregate metrics and update the top cards
 async function fetchMetrics() {
     try {
-        const response = await fetch('/telemetry/metrics');
+        const response = await authedFetch('/telemetry/metrics');
         const data = await response.json();
 
         document.getElementById('metric-total-requests').innerText = data.total_requests;
-        document.getElementById('metric-p95-latency').innerText = data.p95_latency_ms; // NEW
+        document.getElementById('metric-p95-latency').innerText = data.p95_latency_ms;
         document.getElementById('metric-avg-latency').innerText = data.average_latency_ms;
         document.getElementById('metric-error-count').innerText = data.error_count;
-        
+
         const healthEl = document.getElementById('metric-system-health');
         const healthCard = document.getElementById('health-card');
+        const isDegraded = data.system_health === "Degraded";
+
         healthEl.innerText = data.system_health;
 
-        if (data.system_health === "Degraded") {
-            healthCard.classList.replace('metric-success', 'metric-warning');
-            healthEl.classList.replace('text-success', 'text-warning');
-        } else {
-            healthCard.classList.replace('metric-warning', 'metric-success');
-            healthEl.classList.replace('text-warning', 'text-success');
-        }
+        // FIX: classList.replace() silently fails if the class to remove isn't present
+        // (e.g. on first render). Use explicit remove + add for a reliable toggle.
+        healthCard.classList.remove('metric-success', 'metric-warning');
+        healthCard.classList.add(isDegraded ? 'metric-warning' : 'metric-success');
+
+        healthEl.classList.remove('text-success', 'text-warning');
+        healthEl.classList.add(isDegraded ? 'text-warning' : 'text-success');
+
     } catch (error) {
         console.error("Error fetching metrics:", error);
     }
@@ -88,11 +104,11 @@ async function fetchMetrics() {
 // Fetch individual logs to populate the table and the chart
 async function fetchLogs() {
     try {
-        const response = await fetch('/telemetry/logs?limit=20');
+        const response = await authedFetch('/telemetry/logs?limit=20');
         const logs = await response.json();
-        
-        // Reverse logs to show oldest to newest on the chart
-        const chartLogs = [...logs].reverse(); 
+
+        // Reverse logs to show oldest-to-newest on the chart
+        const chartLogs = [...logs].reverse();
 
         updateChart(chartLogs);
         updateTable(logs);
@@ -102,14 +118,17 @@ async function fetchLogs() {
     }
 }
 
+// FIX: Zero-pad hours, minutes, seconds so chart labels are consistent
+// (e.g. "09:03:05" instead of "9:3:5").
+function formatTime(date) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 function updateChart(logs) {
     if (!latencyChartInstance) return;
 
-    const labels = logs.map(log => {
-        const d = new Date(log.timestamp);
-        return `${d.getHours()}:${d.getMinutes()}:${d.getSeconds()}`;
-    });
-    
+    const labels = logs.map(log => formatTime(new Date(log.timestamp)));
     const dataPoints = logs.map(log => log.response_time_ms);
 
     latencyChartInstance.data.labels = labels;
@@ -119,12 +138,11 @@ function updateChart(logs) {
 
 function updateTable(logs) {
     const tbody = document.getElementById('log-table-body');
-    tbody.innerHTML = ''; // Clear existing rows
+    tbody.innerHTML = '';
 
     logs.forEach(log => {
         const tr = document.createElement('tr');
-        
-        // Color code status codes
+
         let statusBadge = 'bg-success';
         if (log.status_code >= 400) statusBadge = 'bg-warning text-dark';
         if (log.status_code >= 500) statusBadge = 'bg-danger';
@@ -144,12 +162,11 @@ function updateTable(logs) {
 
 async function placeOrder(itemName) {
     try {
-        await fetch('/orders/', {
+        await authedFetch('/orders/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ item_name: itemName, quantity: 1 })
         });
-        // Force an immediate refresh of both UI panels
         fetchOrders();
         fetchMetrics();
         fetchLogs();
@@ -160,13 +177,12 @@ async function placeOrder(itemName) {
 
 async function fetchOrders() {
     try {
-        const response = await fetch('/orders/');
+        const response = await authedFetch('/orders/');
         const orders = await response.json();
-        
-        const tbody = document.getElementById('queue-table-body');
-        tbody.innerHTML = ''; 
 
-        // Show only the 5 most recent active orders
+        const tbody = document.getElementById('queue-table-body');
+        tbody.innerHTML = '';
+
         const activeOrders = orders.filter(o => !o.is_completed).slice(0, 5);
 
         activeOrders.forEach(order => {
@@ -186,7 +202,7 @@ async function fetchOrders() {
 
 async function completeOrder(orderId) {
     try {
-        await fetch(`/orders/${orderId}/complete`, { method: 'PUT' });
+        await authedFetch(`/orders/${orderId}/complete`, { method: 'PUT' });
         fetchOrders();
         fetchMetrics();
         fetchLogs();
@@ -198,8 +214,7 @@ async function completeOrder(orderId) {
 async function simulatePeakHours() {
     const btn = document.getElementById('btn-stress-test');
     const indicator = document.getElementById('stress-indicator');
-    
-    // UI State: Disable button to prevent overlapping tests
+
     btn.disabled = true;
     btn.classList.add('btn-danger');
     btn.classList.remove('btn-outline-danger');
@@ -207,12 +222,11 @@ async function simulatePeakHours() {
 
     const items = ['Espresso', 'Latte', 'Croissant', 'Americano', 'Mocha'];
     const promises = [];
-    
-    // Fire 50 concurrent requests
+
     for (let i = 0; i < 50; i++) {
         const randomItem = items[Math.floor(Math.random() * items.length)];
         promises.push(
-            fetch('/orders/', {
+            authedFetch('/orders/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ item_name: randomItem, quantity: 1 })
@@ -221,17 +235,13 @@ async function simulatePeakHours() {
     }
 
     try {
-        // Wait for all 50 requests to resolve
         await Promise.allSettled(promises);
-        
-        // Force immediate refresh of all metrics
         fetchOrders();
         fetchMetrics();
         fetchLogs();
     } catch (error) {
         console.error("Stress test encountered an error:", error);
     } finally {
-        // Restore UI State
         btn.disabled = false;
         btn.classList.remove('btn-danger');
         btn.classList.add('btn-outline-danger');
@@ -242,13 +252,11 @@ async function simulatePeakHours() {
 // Boot sequence
 document.addEventListener('DOMContentLoaded', () => {
     initChart();
-    
-    // Initial fetch
+
     fetchMetrics();
     fetchLogs();
     fetchOrders();
 
-    // Poll every 2 seconds
     setInterval(() => {
         fetchMetrics();
         fetchLogs();

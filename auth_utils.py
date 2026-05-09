@@ -1,11 +1,19 @@
 # auth_utils.py
-"""Authentication utilities: password hashing, session helpers, and the
-auth dependency used to protect routes.
+"""Authentication and authorization utilities.
 
-We use the `bcrypt` library directly (not via passlib, which is no longer
+Password hashing uses bcrypt directly (not via passlib, which is no longer
 maintained and broke with bcrypt 5.x). Sessions are stored in signed cookies
 via Starlette's SessionMiddleware, so we only keep small identifiers
-(user id, username) in the cookie payload — never the password or its hash.
+(user id, username, role) in the cookie payload — never the password or hash.
+
+This module exposes three FastAPI dependencies for endpoint protection:
+  - get_current_user: any authenticated user
+  - require_staff:    admin or barista (anyone with dashboard access)
+  - require_admin:    admin only
+
+Use 401 vs 403 deliberately:
+  - 401 Unauthorized: not logged in (or session expired)
+  - 403 Forbidden:    logged in, but lacks the required role
 """
 import bcrypt
 from fastapi import Request, HTTPException, status, Depends
@@ -13,16 +21,17 @@ from sqlalchemy.orm import Session
 
 import models
 from database import get_db, SessionLocal
+from roles import Role, STAFF_ROLES
 
 # bcrypt's algorithmic limit: it only hashes the first 72 bytes of input.
-# Rather than silently truncating (which is a footgun), we reject anything
-# longer at the application layer with a clear error.
+# Rather than silently truncating (a footgun), we reject anything longer at
+# the application layer with a clear error.
 BCRYPT_MAX_BYTES = 72
 
-# A pre-computed bcrypt hash of an arbitrary string. We run verify_password()
-# against this whenever the supplied username doesn't exist, so the response
-# time of "user not found" matches "wrong password" — preventing username
-# enumeration via timing attacks.
+# Pre-computed dummy hash for constant-time auth: when a username doesn't
+# exist, we still run a hash check so response timing matches the
+# wrong-password path. Without this, attackers can enumerate valid
+# usernames by measuring response times.
 _DUMMY_HASH = bcrypt.hashpw(b"dummy_password_for_timing", bcrypt.gensalt(rounds=12))
 
 
@@ -45,7 +54,6 @@ def hash_password(plain: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     """Constant-time check of a plaintext password against a stored hash."""
     encoded = plain.encode("utf-8")
-    # Reject over-limit passwords up front rather than letting bcrypt raise.
     if len(encoded) > BCRYPT_MAX_BYTES:
         return False
     try:
@@ -56,15 +64,15 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def authenticate_admin(db: Session, username: str, password: str):
-    """Returns the AdminUser if credentials are valid, otherwise None.
+def authenticate_user(db: Session, username: str, password: str):
+    """Returns the User if credentials are valid, otherwise None.
 
-    We deliberately return the same None for both 'user not found' and
-    'wrong password', and run a dummy hash check on the not-found path so
-    response timing can't be used to enumerate valid usernames.
+    Returns the same None for both 'user not found' and 'wrong password',
+    and runs a dummy hash check on the not-found path so response timing
+    can't be used to enumerate valid usernames.
     """
-    user = db.query(models.AdminUser).filter(
-        models.AdminUser.username == username
+    user = db.query(models.User).filter(
+        models.User.username == username
     ).first()
     if not user:
         # Burn roughly the same time as a real verification.
@@ -75,12 +83,13 @@ def authenticate_admin(db: Session, username: str, password: str):
     return user
 
 
-def get_current_admin(request: Request, db: Session = Depends(get_db)):
-    """FastAPI dependency: returns the current AdminUser or raises 401.
+# --- Dependencies ---
 
-    Use this on JSON API routes (e.g. /orders, /telemetry) where a redirect
-    wouldn't make sense. For HTML routes we rely on the auth-gate middleware
-    in main.py instead, which redirects to /login.
+def get_current_user(request: Request, db: Session = Depends(get_db)):
+    """Returns the current authenticated User, or raises 401.
+
+    Use directly when an endpoint accepts any authenticated user regardless
+    of role (e.g. POST /orders/ where customers can place orders).
     """
     user_id = request.session.get("user_id")
     if not user_id:
@@ -88,8 +97,8 @@ def get_current_admin(request: Request, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
         )
-    user = db.query(models.AdminUser).filter(
-        models.AdminUser.id == user_id
+    user = db.query(models.User).filter(
+        models.User.id == user_id
     ).first()
     if not user:
         # Session references a deleted user — treat as unauthenticated.
@@ -100,23 +109,48 @@ def get_current_admin(request: Request, db: Session = Depends(get_db)):
     return user
 
 
+def require_staff(current_user: models.User = Depends(get_current_user)):
+    """Allows admin or barista. Customers get 403."""
+    if current_user.role not in STAFF_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Staff role required",
+        )
+    return current_user
+
+
+def require_admin(current_user: models.User = Depends(get_current_user)):
+    """Admin only. Baristas and customers get 403."""
+    if current_user.role != Role.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required",
+        )
+    return current_user
+
+
+# --- Bootstrap ---
+
 def seed_initial_admin(username: str, password: str) -> None:
     """Creates the bootstrap admin from env vars if no admin exists yet.
 
-    Idempotent: if any AdminUser row exists, this is a no-op. That means
-    rotating the .env password won't update the existing admin — that's
+    Idempotent: if any user with role=admin exists, this is a no-op. That
+    means rotating ADMIN_PASSWORD in .env won't update the existing admin —
     intentional, since otherwise anyone with .env write access could
-    silently take over an existing account. Use a proper password-reset
-    flow (or delete the row manually) to rotate credentials.
+    silently take over an existing account. Use the user management UI
+    (or delete the row manually) to rotate credentials.
     """
     db = SessionLocal()
     try:
-        existing = db.query(models.AdminUser).first()
-        if existing:
+        existing_admin = db.query(models.User).filter(
+            models.User.role == Role.ADMIN
+        ).first()
+        if existing_admin:
             return
-        admin = models.AdminUser(
+        admin = models.User(
             username=username,
             hashed_password=hash_password(password),
+            role=Role.ADMIN,
         )
         db.add(admin)
         db.commit()

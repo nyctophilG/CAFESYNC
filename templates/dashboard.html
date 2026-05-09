@@ -19,6 +19,7 @@
         </span>
         <div class="d-flex align-items-center gap-3">
             <span class="badge bg-success align-middle"><i class="bi bi-check-circle-fill me-1"></i>System Online</span>
+            <span class="badge bg-primary text-uppercase"><i class="bi bi-shield-fill-check me-1"></i>{{ role }}</span>
             <span class="text-muted small">
                 <i class="bi bi-person-circle me-1"></i>{{ username }}
             </span>
@@ -84,9 +85,9 @@
                     <button class="btn btn-outline-light mb-3 p-2 text-start" onclick="placeOrder('Latte')">
                         <i class="bi bi-cup me-2"></i> Execute: Latte
                     </button>
-                    
+
                     <hr class="border-secondary my-3">
-                    
+
                     <p class="text-danger small mb-2 fw-bold"><i class="bi bi-exclamation-triangle-fill me-1"></i>Chaos Engineering:</p>
                     <button class="btn btn-outline-danger p-3 text-start position-relative" id="btn-stress-test" onclick="simulatePeakHours()">
                         <i class="bi bi-lightning-charge-fill fs-5 me-2"></i> Simulate Peak Load (50x)
@@ -97,7 +98,7 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- Chart -->
         <div class="col-md-8">
             <div class="card h-100 border-info">
@@ -140,8 +141,39 @@
             </div>
         </div>
     </div>
+
+    <!-- User Management (Admin Only) -->
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card border-warning">
+                <div class="card-header bg-warning bg-opacity-10 text-warning border-bottom border-warning d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-people-fill me-2"></i>User &amp; Role Management</span>
+                    <small class="text-muted">Admin only</small>
+                </div>
+                <div class="card-body p-0 table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Role</th>
+                                <th>Created</th>
+                                <th class="text-end pe-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
+<!-- Pass server-side identity to JS so we can prevent self-mutation in the UI -->
+<script>
+    window.CURRENT_USERNAME = "{{ username }}";
+    window.CURRENT_ROLE = "{{ role }}";
+</script>
 <script src="/static/app.js"></script>
 </body>
 </html>

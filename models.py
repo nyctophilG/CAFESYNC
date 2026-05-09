@@ -2,6 +2,7 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean
 from datetime import datetime, timezone
 from database import Base
+from roles import Role
 
 # FIX: Use timezone-aware UTC datetimes via a lambda.
 # datetime.utcnow() is deprecated in Python 3.12+ and returns naive datetimes,
@@ -33,15 +34,17 @@ class Order(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
 
-class AdminUser(Base):
-    """Pod 2: Operations dashboard user accounts.
+class User(Base):
+    """Unified user table for all roles (admin, barista, customer).
 
-    Only stores hashed passwords (bcrypt via passlib) — never plaintext.
-    Username is unique to prevent duplicate accounts.
+    Stores hashed passwords (bcrypt) — never plaintext.
+    `role` controls dashboard access and per-endpoint permissions; see
+    auth_utils.py for the dependencies that enforce it.
     """
-    __tablename__ = "admin_users"
+    __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(64), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
+    role = Column(String(16), nullable=False, default=Role.CUSTOMER, index=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow)

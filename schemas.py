@@ -1,6 +1,7 @@
 # schemas.py
 from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import datetime
+from roles import ALL_ROLES
 
 
 class SystemLogResponse(BaseModel):
@@ -41,3 +42,29 @@ class OrderResponse(OrderBase):
 
     # Instructs Pydantic to read data from SQLAlchemy ORM objects
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- User schemas ---
+
+class UserResponse(BaseModel):
+    """Public representation of a user — never includes the password hash."""
+    id: int
+    username: str
+    role: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RoleUpdate(BaseModel):
+    """Payload for PUT /users/{id}/role."""
+    role: str
+
+    @field_validator("role")
+    @classmethod
+    def role_must_be_valid(cls, v: str) -> str:
+        if v not in ALL_ROLES:
+            raise ValueError(
+                f"Invalid role '{v}'. Must be one of: {sorted(ALL_ROLES)}"
+            )
+        return v

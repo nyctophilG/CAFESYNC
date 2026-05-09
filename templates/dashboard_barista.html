@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CafeSync — Barista Station</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-dark bg-dark border-bottom border-secondary mb-4 py-3">
+    <div class="container-fluid px-4">
+        <span class="navbar-brand mb-0 h1 fs-4">
+            <i class="bi bi-cup-hot-fill text-warning me-2"></i>CafeSync Barista Station
+        </span>
+        <div class="d-flex align-items-center gap-3">
+            <span class="badge bg-warning text-dark text-uppercase"><i class="bi bi-shield-fill me-1"></i>{{ role }}</span>
+            <span class="text-muted small">
+                <i class="bi bi-person-circle me-1"></i>{{ username }}
+            </span>
+            <a href="/logout" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-box-arrow-right me-1"></i>Sign Out
+            </a>
+        </div>
+    </div>
+</nav>
+
+<div class="container px-4">
+    <div class="row mb-4">
+        <!-- Order Entry -->
+        <div class="col-md-5">
+            <div class="card h-100 border-primary">
+                <div class="card-header bg-primary bg-opacity-10 text-primary border-bottom border-primary">
+                    <i class="bi bi-plus-circle me-2"></i>New Order
+                </div>
+                <div class="card-body d-flex flex-column justify-content-center">
+                    <p class="text-muted small mb-3">Place a new order:</p>
+                    <button class="btn btn-outline-light mb-2 p-2 text-start" onclick="placeOrder('Espresso')">
+                        <i class="bi bi-cup-hot me-2"></i> Espresso
+                    </button>
+                    <button class="btn btn-outline-light mb-2 p-2 text-start" onclick="placeOrder('Latte')">
+                        <i class="bi bi-cup me-2"></i> Latte
+                    </button>
+                    <button class="btn btn-outline-light mb-2 p-2 text-start" onclick="placeOrder('Americano')">
+                        <i class="bi bi-cup-straw me-2"></i> Americano
+                    </button>
+                    <button class="btn btn-outline-light mb-2 p-2 text-start" onclick="placeOrder('Mocha')">
+                        <i class="bi bi-cup-fill me-2"></i> Mocha
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Queue -->
+        <div class="col-md-7">
+            <div class="card h-100">
+                <div class="card-header"><i class="bi bi-list-task text-warning me-2"></i>Active Fulfillment Queue</div>
+                <div class="card-body p-0 table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr><th>TxID</th><th>Item</th><th>Status</th><th>Action</th></tr>
+                        </thead>
+                        <tbody id="queue-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.CURRENT_USERNAME = "{{ username }}";
+    window.CURRENT_ROLE = "{{ role }}";
+</script>
+<script src="/static/app_barista.js"></script>
+</body>
+</html>

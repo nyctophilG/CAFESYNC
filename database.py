@@ -42,11 +42,11 @@ SQLALCHEMY_DATABASE_URL = f"mssql+pyodbc:///?odbc_connect={params}"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    pool_size=10,           # Maximum number of permanent connections to keep alive
-    max_overflow=20,        # Maximum number of temporary connections allowed during spikes
-    pool_timeout=30,        # Maximum time (seconds) to wait for a connection before failing
-    pool_pre_ping=True,     # Pessimistic disconnect handling (liveness check)
-    fast_executemany=True   # ODBC Driver optimization for bulk operations
+    pool_size=10,
+    max_overflow=20,
+    pool_timeout=30,
+    pool_pre_ping=True,
+    fast_executemany=True
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

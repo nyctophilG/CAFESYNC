@@ -13,22 +13,15 @@ from auth_utils import require_admin
 router = APIRouter(
     prefix="/telemetry",
     tags=["Technical Monitoring"],
-    # Lock down the entire router: only admins can read telemetry data.
     dependencies=[Depends(require_admin)],
 )
 
 @router.get("/logs", response_model=List[schemas.SystemLogResponse])
 def get_recent_logs(limit: int = 50, db: Session = Depends(get_db)):
-    """Retrieves the most recent system telemetry logs."""
     return db.query(models.SystemLog).order_by(models.SystemLog.timestamp.desc()).limit(limit).all()
 
 @router.get("/metrics")
 def get_system_metrics(db: Session = Depends(get_db)):
-    """Aggregates core performance metrics, including P95 tail latency.
-
-    Note: All metrics (avg, P95, error count) are computed over the same
-    rolling window of the 1000 most recent requests for consistency.
-    """
     WINDOW = 1000
 
     recent_logs = db.query(models.SystemLog)\
@@ -49,11 +42,8 @@ def get_system_metrics(db: Session = Depends(get_db)):
 
     latencies = sorted([log.response_time_ms for log in recent_logs])
     avg_latency = sum(latencies) / len(latencies)
-
-    # Clamp P95 index to valid bounds to prevent off-by-one on small datasets
     p95_index = min(math.ceil(0.95 * len(latencies)) - 1, len(latencies) - 1)
     p95_latency = latencies[p95_index]
-
     error_count = sum(1 for log in recent_logs if log.status_code >= 500)
 
     return {

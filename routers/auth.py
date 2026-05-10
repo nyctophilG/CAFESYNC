@@ -9,46 +9,31 @@ from sqlalchemy.exc import IntegrityError
 import models
 from database import get_db
 from auth_utils import authenticate_user, hash_password, BCRYPT_MAX_BYTES
-from roles import Role, STAFF_ROLES
+from roles import Role, post_login_path
 
 router = APIRouter(tags=["Authentication"])
 templates = Jinja2Templates(directory="templates")
 
-# Session lifetimes (kept in sync with routers/twofa.py)
 SESSION_LIFETIME_SHORT = 8 * 60 * 60
 SESSION_LIFETIME_LONG = 30 * 24 * 60 * 60
 
-# Minimum password length for new accounts.
 MIN_PASSWORD_LENGTH = 8
 
 
-def _post_login_redirect(role: str) -> str:
-    if role in STAFF_ROLES:
-        return "/dashboard"
-    return "/login?signed_in=1"
-
-
 @router.get("/login", response_class=HTMLResponse, include_in_schema=False)
-async def login_page(request: Request, signed_in: int = 0):
+async def login_page(request: Request):
     user_id = request.session.get("user_id")
     role = request.session.get("role")
-    if user_id and role in STAFF_ROLES:
-        return RedirectResponse(url="/dashboard", status_code=302)
+    if user_id and role:
+        return RedirectResponse(url=post_login_path(role), status_code=302)
 
     if user_id and not role:
-        # Corrupt session — clear and fall through to render login form.
         request.session.clear()
 
-    notice = None
-    if signed_in and user_id:
-        notice = (
-            "You're signed in as a customer. The dashboard is staff-only, "
-            "but you can place orders via the API."
-        )
     return templates.TemplateResponse(
         request=request,
         name="login.html",
-        context={"error": None, "notice": notice},
+        context={"error": None, "notice": None},
     )
 
 
@@ -69,19 +54,13 @@ async def login_submit(
             status_code=401,
         )
 
-    # Password verified. Branch on whether 2FA is enabled.
     if user.totp_enabled:
-        # Stash a "pending" identity in the session and redirect to the
-        # challenge page. Crucially: we DO NOT set user_id yet, so the
-        # auth_gate middleware still treats this as unauthenticated for
-        # any other route.
-        request.session.clear()  # wipe any prior partial state
+        request.session.clear()
         request.session["pending_user_id"] = user.id
         request.session["pending_at"] = int(time.time())
         request.session["pending_remember_me"] = bool(remember_me)
         return RedirectResponse(url="/login/2fa", status_code=302)
 
-    # No 2FA — log in immediately.
     request.session["user_id"] = user.id
     request.session["username"] = user.username
     request.session["role"] = user.role
@@ -91,17 +70,15 @@ async def login_submit(
     else:
         request.session["expires_at"] = int(time.time()) + SESSION_LIFETIME_SHORT
 
-    return RedirectResponse(url=_post_login_redirect(user.role), status_code=302)
+    return RedirectResponse(url=post_login_path(user.role), status_code=302)
 
 
 @router.get("/signup", response_class=HTMLResponse, include_in_schema=False)
 async def signup_page(request: Request):
     user_id = request.session.get("user_id")
     role = request.session.get("role")
-    if user_id and role in STAFF_ROLES:
-        return RedirectResponse(url="/dashboard", status_code=302)
-    if user_id:
-        return RedirectResponse(url="/login?signed_in=1", status_code=302)
+    if user_id and role:
+        return RedirectResponse(url=post_login_path(role), status_code=302)
     return templates.TemplateResponse(
         request=request,
         name="signup.html",
@@ -137,7 +114,7 @@ async def signup_submit(
     new_user = models.User(
         username=username,
         hashed_password=hash_password(password),
-        role=Role.CUSTOMER,
+        role=Role.USER,
     )
     db.add(new_user)
     try:
@@ -152,13 +129,12 @@ async def signup_submit(
         )
     db.refresh(new_user)
 
-    # Auto-login. Customers don't have 2FA at signup time, so no challenge step.
     request.session["user_id"] = new_user.id
     request.session["username"] = new_user.username
     request.session["role"] = new_user.role
     request.session["expires_at"] = int(time.time()) + SESSION_LIFETIME_SHORT
 
-    return RedirectResponse(url=_post_login_redirect(new_user.role), status_code=302)
+    return RedirectResponse(url=post_login_path(new_user.role), status_code=302)
 
 
 @router.post("/logout", include_in_schema=False)

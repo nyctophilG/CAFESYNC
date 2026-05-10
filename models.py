@@ -9,8 +9,6 @@ from roles import Role
 
 
 def _utcnow():
-    """Use timezone-aware UTC datetimes. datetime.utcnow() is deprecated in
-    Python 3.12+ and returns naive datetimes."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
@@ -27,7 +25,11 @@ class SystemLog(Base):
 
 
 class Order(Base):
-    """Pod 1: Cafe Business Logic Table"""
+    """Pod 1: Cafe Business Logic Table.
+
+    `placed_by_user_id` was added so we can show admin/barista WHO placed
+    each order in the queue. Nullable for older rows that predate the column.
+    """
     __tablename__ = "cafe_orders"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -35,22 +37,19 @@ class Order(Base):
     quantity = Column(Integer, nullable=False)
     is_completed = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
+    placed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    placed_by = relationship("User", foreign_keys=[placed_by_user_id])
 
 
 class User(Base):
-    """Unified user table for all roles (admin, barista, customer).
-
-    Auth columns:
-      - hashed_password: bcrypt
-      - totp_secret / totp_enabled: TOTP via authenticator app
-      - email: optional, kept for future email-based features
-    """
+    """Unified user table for all roles."""
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(64), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
-    role = Column(String(16), nullable=False, default=Role.CUSTOMER, index=True)
+    role = Column(String(16), nullable=False, default=Role.USER, index=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     email = Column(String(255), nullable=True, unique=True, index=True)
@@ -73,12 +72,10 @@ class User(Base):
 
     @property
     def has_2fa(self) -> bool:
-        """Whether this account currently requires a second factor at login."""
         return bool(self.totp_enabled)
 
 
 class BackupCode(Base):
-    """Single-use recovery codes generated when TOTP is enabled."""
     __tablename__ = "backup_codes"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -92,27 +89,10 @@ class BackupCode(Base):
 
 
 class Passkey(Base):
-    """WebAuthn / FIDO2 passkey credentials.
-
-    A user can have multiple passkeys (e.g. one per device). The `name`
-    column is a human-readable label the user assigns at registration time
-    so they can manage which devices are enrolled.
-
-    Stored fields are exactly what the webauthn library needs for
-    verification:
-      - credential_id: the unique ID issued by the authenticator. Used as
-        the lookup key during login.
-      - public_key: the COSE-encoded public key. Bytes, not human-readable.
-      - sign_count: a monotonically-increasing counter the authenticator
-        bumps on each use. Helps detect cloned credentials.
-    """
     __tablename__ = "passkeys"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    # credential_id is binary; we store base64url-encoded for portability
-    # and easy debugging. The webauthn library returns it as bytes; we
-    # encode/decode at the boundary.
     credential_id = Column(String(512), unique=True, nullable=False, index=True)
     public_key = Column(LargeBinary, nullable=False)
     sign_count = Column(Integer, default=0, nullable=False)

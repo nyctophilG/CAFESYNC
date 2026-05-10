@@ -15,20 +15,17 @@ import models
 from routers import orders, telemetry, auth, users, twofa, passkeys
 from auth_utils import seed_initial_admin
 from routers.auth import SESSION_LIFETIME_LONG
-from roles import Role, STAFF_ROLES
+from roles import Role, DASHBOARD_ROLES, post_login_path
 
 Base.metadata.create_all(bind=engine)
 seed_initial_admin(ADMIN_USERNAME, ADMIN_PASSWORD)
 
-app = FastAPI(title="CafeSync Technical Monitoring API")
+app = FastAPI(title="CafeSync API")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # --- AUTH GATE ---
-# Public paths: /login/2fa is mid-login (no session yet). The passkey
-# login endpoints are public because they ARE the authentication —
-# verifying a passkey is what creates the session.
 PUBLIC_PATHS = {
     "/health", "/login", "/logout", "/signup",
     "/login/2fa",
@@ -37,7 +34,14 @@ PUBLIC_PATHS = {
 }
 
 API_PREFIXES = ("/orders", "/telemetry", "/users", "/passkey")
-STAFF_ONLY_UI_PATHS = {"/dashboard", "/"}
+
+# UI paths and which roles may reach them. Keys = path, values = set of roles.
+# Anything not in this map is allowed for any authenticated user (e.g. /menu,
+# /2fa/setup, /security).
+RESTRICTED_UI_PATHS = {
+    "/dashboard": DASHBOARD_ROLES | {Role.BARISTA},  # admin, viewer, barista (each gets its own template)
+    "/": DASHBOARD_ROLES | {Role.BARISTA, Role.USER},  # everyone (we redirect by role below)
+}
 
 
 @app.middleware("http")
@@ -73,15 +77,17 @@ async def auth_gate_middleware(request: Request, call_next):
             return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
         return RedirectResponse(url="/login", status_code=302)
 
-    if path in STAFF_ONLY_UI_PATHS and role not in STAFF_ROLES:
-        return RedirectResponse(url="/login?signed_in=1", status_code=302)
+    # Per-path role restrictions for UI routes. /dashboard for users sends
+    # them to /menu instead of 403 — better UX since /menu is THEIR home.
+    if path == "/dashboard" and role == Role.USER:
+        return RedirectResponse(url="/menu", status_code=302)
 
     return await call_next(request)
 
 
 # --- TELEMETRY ---
 TELEMETRY_EXCLUDED_PATHS = {
-    "/health", "/dashboard", "/", "/login", "/logout", "/signup",
+    "/health", "/dashboard", "/", "/login", "/logout", "/signup", "/menu",
     "/login/2fa", "/2fa/setup",
 }
 
@@ -114,7 +120,6 @@ async def add_telemetry_middleware(request: Request, call_next):
 
 
 # --- SESSION MIDDLEWARE ---
-# Added LAST so it runs FIRST (Starlette wraps middleware in reverse).
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET,
@@ -135,13 +140,20 @@ app.include_router(users.router)
 
 @app.get("/dashboard", response_class=HTMLResponse, tags=["UI"])
 async def render_dashboard(request: Request):
-    role = request.session.get("role", Role.CUSTOMER)
+    """Renders the right dashboard for the user's role.
+      admin   -> full dashboard.html
+      viewer  -> same dashboard.html, controls hidden
+      barista -> dashboard_barista.html (queue + serve only)
+      user    -> redirected to /menu by auth-gate middleware
+    """
+    role = request.session.get("role", Role.USER)
     username = request.session.get("username", "")
 
-    if role == Role.ADMIN:
-        template = "dashboard.html"
-    else:
+    if role == Role.BARISTA:
         template = "dashboard_barista.html"
+    else:
+        # admin or viewer — same template, role determines what's visible
+        template = "dashboard.html"
 
     return templates.TemplateResponse(
         request=request,
@@ -150,9 +162,26 @@ async def render_dashboard(request: Request):
     )
 
 
+@app.get("/menu", response_class=HTMLResponse, tags=["UI"])
+async def render_menu(request: Request):
+    """The customer-facing menu. Any authenticated user can browse;
+    viewers see it without 'Place Order' buttons (handled in template + JS)."""
+    role = request.session.get("role", Role.USER)
+    username = request.session.get("username", "")
+    return templates.TemplateResponse(
+        request=request,
+        name="menu.html",
+        context={"username": username, "role": role},
+    )
+
+
 @app.get("/", include_in_schema=False)
-def root_redirect():
-    return RedirectResponse(url="/dashboard")
+def root_redirect(request: Request):
+    """Send each role to the right home."""
+    role = request.session.get("role")
+    if not role:
+        return RedirectResponse(url="/login")
+    return RedirectResponse(url=post_login_path(role))
 
 
 @app.get("/health")

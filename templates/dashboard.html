@@ -11,7 +11,6 @@
 </head>
 <body>
 
-<!-- Navbar -->
 <nav class="navbar navbar-dark bg-dark border-bottom border-secondary mb-4 py-3">
     <div class="container-fluid px-4">
         <span class="navbar-brand mb-0 h1 fs-4">
@@ -19,10 +18,15 @@
         </span>
         <div class="d-flex align-items-center gap-3">
             <span class="badge bg-success align-middle"><i class="bi bi-check-circle-fill me-1"></i>System Online</span>
-            <span class="badge bg-primary text-uppercase"><i class="bi bi-shield-fill-check me-1"></i>{{ role }}</span>
+            <span class="badge {% if role == 'admin' %}bg-primary{% else %}bg-info text-dark{% endif %} text-uppercase">
+                <i class="bi {% if role == 'admin' %}bi-shield-fill-check{% else %}bi-eye-fill{% endif %} me-1"></i>{{ role }}
+            </span>
             <span class="text-muted small">
                 <i class="bi bi-person-circle me-1"></i>{{ username }}
             </span>
+            <a href="/menu" class="btn btn-sm btn-outline-warning">
+                <i class="bi bi-cup-hot me-1"></i>Menu
+            </a>
             <a href="/2fa/setup" class="btn btn-sm btn-outline-info">
                 <i class="bi bi-shield-lock me-1"></i>Security
             </a>
@@ -34,7 +38,16 @@
 </nav>
 
 <div class="container-fluid px-4">
-    <!-- Top-Level Metrics Cards -->
+
+    {% if role == 'viewer' %}
+    <div class="alert alert-info py-2 small mb-4">
+        <i class="bi bi-eye me-2"></i>
+        You're signed in as a <strong>viewer</strong>. You can see metrics, telemetry,
+        and the orders queue, but interactive controls are not available for your role.
+    </div>
+    {% endif %}
+
+    <!-- Top-Level Metrics Cards (visible to admin and viewer) -->
     <div class="row mb-4">
         <div class="col-md-3">
             <div class="card metric-primary h-100">
@@ -74,7 +87,9 @@
     </div>
 
     <div class="row mb-4">
-        <!-- POS Simulator & Stress Test -->
+        {# Traffic Generator + Stress Test: admin only. Using a Jinja comment
+           so the role-specific section never leaks into viewer HTML. #}
+        {% if role == 'admin' %}
         <div class="col-md-4">
             <div class="card h-100 border-primary">
                 <div class="card-header bg-primary bg-opacity-10 text-primary border-bottom border-primary">
@@ -101,9 +116,10 @@
                 </div>
             </div>
         </div>
+        {% endif %}
 
         <!-- Chart -->
-        <div class="col-md-8">
+        <div class="{% if role == 'admin' %}col-md-8{% else %}col-12{% endif %}">
             <div class="card h-100 border-info">
                 <div class="card-header bg-info bg-opacity-10 text-info border-bottom border-info">
                     <i class="bi bi-graph-up me-2"></i>Network Telemetry (ms)
@@ -115,7 +131,6 @@
         </div>
     </div>
 
-    <!-- Data Tables -->
     <div class="row">
         <div class="col-md-6 mb-4">
             <div class="card h-100">
@@ -123,7 +138,13 @@
                 <div class="card-body p-0 table-responsive">
                     <table class="table table-hover">
                         <thead class="table-light">
-                            <tr><th>TxID</th><th>Payload</th><th>Status</th><th>Action</th></tr>
+                            <tr>
+                                <th>TxID</th>
+                                <th>Item</th>
+                                <th>Placed by</th>
+                                <th>Status</th>
+                                {% if role == 'admin' %}<th>Action</th>{% endif %}
+                            </tr>
                         </thead>
                         <tbody id="queue-table-body"></tbody>
                     </table>
@@ -145,7 +166,8 @@
         </div>
     </div>
 
-    <!-- User Management (Admin Only) -->
+    {# User Management: admin only #}
+    {% if role == 'admin' %}
     <div class="row">
         <div class="col-12 mb-4">
             <div class="card border-warning">
@@ -170,9 +192,9 @@
             </div>
         </div>
     </div>
+    {% endif %}
 </div>
 
-<!-- Pass server-side identity to JS so we can prevent self-mutation in the UI -->
 <script>
     window.CURRENT_USERNAME = "{{ username }}";
     window.CURRENT_ROLE = "{{ role }}";

@@ -1,9 +1,14 @@
 # auth_utils.py
 """Authentication and authorization utilities.
 
-Password hashing uses bcrypt directly (not via passlib, which is unmaintained).
-TOTP uses pyotp (RFC 6238). WebAuthn/passkeys are handled in routers/passkeys.py
-since the library does its own primitives.
+Password hashing uses bcrypt. TOTP via pyotp. WebAuthn handled in
+routers/passkeys.py.
+
+Dependencies for endpoint protection:
+  get_current_user      — any authenticated user
+  require_admin         — admin only
+  require_fulfillment   — admin or barista (can mark orders complete)
+  require_dashboard     — admin or viewer (can see the ops dashboard)
 """
 import base64
 import io
@@ -18,7 +23,7 @@ from sqlalchemy.orm import Session
 
 import models
 from database import get_db, SessionLocal
-from roles import Role, STAFF_ROLES
+from roles import Role, ORDER_FULFILLMENT_ROLES, DASHBOARD_ROLES
 
 BCRYPT_MAX_BYTES = 72
 _DUMMY_HASH = bcrypt.hashpw(b"dummy_password_for_timing", bcrypt.gensalt(rounds=12))
@@ -53,7 +58,6 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def authenticate_user(db: Session, username: str, password: str):
-    """Returns the User on valid credentials, otherwise None."""
     user = db.query(models.User).filter(
         models.User.username == username
     ).first()
@@ -68,7 +72,6 @@ def authenticate_user(db: Session, username: str, password: str):
 # --- Dependencies ---
 
 def get_current_user(request: Request, db: Session = Depends(get_db)):
-    """Returns the current authenticated user, or raises 401."""
     user_id = request.session.get("user_id")
     if not user_id:
         raise HTTPException(
@@ -84,20 +87,37 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
     return user
 
 
-def require_staff(current_user: models.User = Depends(get_current_user)):
-    if current_user.role not in STAFF_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Staff role required",
-        )
-    return current_user
-
-
 def require_admin(current_user: models.User = Depends(get_current_user)):
     if current_user.role != Role.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin role required",
+        )
+    return current_user
+
+
+def require_fulfillment(current_user: models.User = Depends(get_current_user)):
+    """Allow admin OR barista to mark orders complete. Used on PUT
+    /orders/{id}/complete."""
+    if current_user.role not in ORDER_FULFILLMENT_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Order fulfillment role required",
+        )
+    return current_user
+
+
+def require_dashboard(current_user: models.User = Depends(get_current_user)):
+    """Allow admin OR viewer to read dashboard data (telemetry, orders list).
+    Note: viewers can SEE telemetry but server-side mutation is still gated
+    by the more restrictive deps above."""
+    if current_user.role not in DASHBOARD_ROLES and current_user.role != Role.BARISTA:
+        # Barista can also fetch the orders list (they need to see the queue),
+        # so we widen this to include them. The "/dashboard" page itself is
+        # gated separately at the auth-gate / template level.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dashboard access role required",
         )
     return current_user
 
@@ -163,8 +183,6 @@ def verify_backup_code_against_hash(supplied: str, code_hash: str) -> bool:
 
 
 def consume_backup_code(db: Session, user: models.User, supplied: str) -> bool:
-    """Walks unused codes (bcrypt hashes can't be indexed by content) and
-    marks the matching one used."""
     from datetime import datetime, timezone
 
     unused = db.query(models.BackupCode).filter(
@@ -184,7 +202,6 @@ def consume_backup_code(db: Session, user: models.User, supplied: str) -> bool:
 # --- Bootstrap ---
 
 def seed_initial_admin(username: str, password: str) -> None:
-    """Creates the bootstrap admin from env vars if no admin exists yet."""
     db = SessionLocal()
     try:
         existing_admin = db.query(models.User).filter(

@@ -1,5 +1,5 @@
 # schemas.py
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import datetime
 from typing import Optional, List
 from roles import ALL_ROLES
@@ -33,18 +33,31 @@ class OrderCreate(OrderBase):
 
 
 class OrderResponse(OrderBase):
+    """Includes placed_by_username so the admin queue can show who ordered
+    what. Field is optional since old rows have NULL placer."""
     id: int
     is_completed: bool
     created_at: datetime
+    placed_by_username: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def from_order(cls, order):
+        """Helper since SQLAlchemy doesn't auto-fill placed_by_username."""
+        return cls(
+            id=order.id,
+            item_name=order.item_name,
+            quantity=order.quantity,
+            is_completed=order.is_completed,
+            created_at=order.created_at,
+            placed_by_username=order.placed_by.username if order.placed_by else None,
+        )
 
 
 # --- User schemas ---
 
 class UserResponse(BaseModel):
-    """Public representation of a user — never includes password hash or
-    TOTP secret."""
     id: int
     username: str
     role: str
@@ -71,8 +84,6 @@ class RoleUpdate(BaseModel):
 # --- 2FA schemas ---
 
 class TOTPConfirmRequest(BaseModel):
-    """Sent when the user finishes scanning the QR and enters their first
-    code. We verify against the pending secret stored in their session."""
     code: str
 
     @field_validator("code")
@@ -85,13 +96,9 @@ class TOTPConfirmRequest(BaseModel):
 
 
 class TOTPSetupResponse(BaseModel):
-    """Response when the user begins setup — gives the client the QR PNG
-    and the secret (in case they want to copy-paste instead of scanning)."""
     qr_data_uri: str
     secret: str
 
 
 class BackupCodesResponse(BaseModel):
-    """Plaintext backup codes shown to the user EXACTLY ONCE after TOTP
-    setup. Server never returns these again."""
     codes: List[str]

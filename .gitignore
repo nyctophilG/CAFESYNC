@@ -22,3 +22,5 @@ Thumbs.db
 *.sqlite3
 .coverage
 cafesync.db
+dockerignore
+render.yaml

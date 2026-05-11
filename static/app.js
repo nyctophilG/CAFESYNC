@@ -1,5 +1,12 @@
 // static/app.js — admin and viewer dashboard logic.
 
+// Read role/username from <body data-*> attributes set by the template.
+// Used instead of inline window.* assignments so we don't need
+// CSP 'unsafe-inline' for scripts.
+const _bodyEl = document.body;
+window.CURRENT_USERNAME = _bodyEl.dataset.username || "";
+window.CURRENT_ROLE = _bodyEl.dataset.role || "";
+
 const IS_VIEWER = window.CURRENT_ROLE === "viewer";
 const IS_ADMIN  = window.CURRENT_ROLE === "admin";
 
@@ -180,7 +187,7 @@ async function fetchOrders() {
                 ? `<span class="text-info">${escapeHtml(order.placed_by_username)}</span>`
                 : `<span class="text-muted">—</span>`;
             const actionCell = IS_ADMIN
-                ? `<td><button class="btn btn-sm btn-success" onclick="completeOrder(${order.id})">Serve</button></td>`
+                ? `<td><button class="btn btn-sm btn-success" data-action="serve" data-order-id="${order.id}">Serve</button></td>`
                 : "";
             tr.innerHTML = `
                 <td>#${order.id}</td>
@@ -293,7 +300,9 @@ function renderUsers(users) {
             <select class="form-select form-select-sm bg-dark text-light"
                     style="max-width: 140px; display: inline-block;"
                     ${isSelf ? "disabled" : ""}
-                    onchange="changeUserRole(${user.id}, this.value, '${user.role}')">
+                    data-action="change-role"
+                    data-user-id="${user.id}"
+                    data-old-role="${user.role}">
                 <option value="user"    ${user.role === "user"    ? "selected" : ""}>User</option>
                 <option value="viewer"  ${user.role === "viewer"  ? "selected" : ""}>Viewer</option>
                 <option value="barista" ${user.role === "barista" ? "selected" : ""}>Barista</option>
@@ -304,7 +313,9 @@ function renderUsers(users) {
         const deleteBtn = isSelf
             ? `<span class="text-muted small">— you —</span>`
             : `<button class="btn btn-sm btn-outline-danger"
-                       onclick="deleteUser(${user.id}, '${escapeHtml(user.username)}')">
+                       data-action="delete-user"
+                       data-user-id="${user.id}"
+                       data-username="${escapeHtml(user.username)}">
                   <i class="bi bi-trash"></i>
                </button>`;
 
@@ -366,6 +377,36 @@ document.addEventListener("DOMContentLoaded", () => {
     fetchLogs();
     fetchOrders();
     fetchUsers();
+
+    // Event delegation for dynamically-rendered controls. We attach a
+    // single listener at the document level instead of inline onclick=
+    // handlers, which would violate our CSP (no 'unsafe-inline' allowed
+    // for scripts).
+    document.addEventListener("click", (e) => {
+        const target = e.target.closest("[data-action]");
+        if (!target) return;
+        const action = target.dataset.action;
+
+        if (action === "serve") {
+            const orderId = parseInt(target.dataset.orderId, 10);
+            completeOrder(orderId);
+        } else if (action === "place") {
+            placeOrder(target.dataset.item);
+        } else if (action === "stress") {
+            simulatePeakHours();
+        } else if (action === "delete-user") {
+            const userId = parseInt(target.dataset.userId, 10);
+            deleteUser(userId, target.dataset.username);
+        }
+    });
+
+    document.addEventListener("change", (e) => {
+        const target = e.target.closest("[data-action='change-role']");
+        if (!target) return;
+        const userId = parseInt(target.dataset.userId, 10);
+        const oldRole = target.dataset.oldRole;
+        changeUserRole(userId, target.value, oldRole);
+    });
 
     setInterval(() => {
         fetchMetrics();

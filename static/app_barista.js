@@ -1,6 +1,9 @@
 // static/app_barista.js — barista station logic.
 // Strictly: see queue + click "Serve". Does NOT place orders.
 
+window.CURRENT_USERNAME = document.body.dataset.username || "";
+window.CURRENT_ROLE = document.body.dataset.role || "";
+
 function getCsrfToken() {
     const meta = document.querySelector('meta[name="csrf-token"]');
     return meta ? meta.getAttribute("content") : "";
@@ -53,7 +56,7 @@ async function fetchOrders() {
                 <td>${placerCell}</td>
                 <td><span class="badge bg-warning text-dark">Pending</span></td>
                 <td class="text-end pe-3">
-                    <button class="btn btn-sm btn-success" onclick="completeOrder(${order.id})">
+                    <button class="btn btn-sm btn-success" data-action="serve" data-order-id="${order.id}">
                         <i class="bi bi-check-circle me-1"></i>Serve
                     </button>
                 </td>
@@ -77,5 +80,14 @@ window.completeOrder = completeOrder;
 
 document.addEventListener("DOMContentLoaded", () => {
     fetchOrders();
+
+    // Event delegation for Serve buttons (CSP-safe vs inline onclick).
+    document.addEventListener("click", (e) => {
+        const target = e.target.closest("[data-action='serve']");
+        if (!target) return;
+        const orderId = parseInt(target.dataset.orderId, 10);
+        completeOrder(orderId);
+    });
+
     setInterval(fetchOrders, 2000);
 });

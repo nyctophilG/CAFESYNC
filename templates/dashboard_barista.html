@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body data-username="{{ username }}" data-role="{{ role }}">
 
 <nav class="navbar navbar-dark bg-dark border-bottom border-secondary mb-4 py-3">
     <div class="container-fluid px-4">
@@ -57,10 +57,6 @@
     </div>
 </div>
 
-<script>
-    window.CURRENT_USERNAME = "{{ username }}";
-    window.CURRENT_ROLE = "{{ role }}";
-</script>
 <script src="/static/app_barista.js"></script>
 </body>
 </html>

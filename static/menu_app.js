@@ -2,6 +2,13 @@
 // Renders the menu from window.CAFESYNC_MENU into the page, handles
 // "Place Order" clicks, and shows a toast on success.
 
+// static/menu_app.js
+// Renders the menu from window.CAFESYNC_MENU into the page, handles
+// "Place Order" clicks, and shows a toast on success.
+
+window.CURRENT_USERNAME = document.body.dataset.username || "";
+window.CURRENT_ROLE = document.body.dataset.role || "";
+
 const CAN_ORDER = window.CURRENT_ROLE !== "viewer";
 
 function escapeHtml(s) {
@@ -134,10 +141,14 @@ function showToast(message, kind) {
     toast.innerHTML = `
         <div class="d-flex">
             <div class="toast-body">${escapeHtml(message)}</div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto"
-                    onclick="this.parentElement.parentElement.remove()"></button>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto"></button>
         </div>
     `;
+    // Wire the close button (CSP-safe: addEventListener instead of inline onclick).
+    const closeBtn = toast.querySelector(".btn-close");
+    if (closeBtn) {
+        closeBtn.addEventListener("click", () => toast.remove());
+    }
     container.appendChild(toast);
     // Auto-dismiss
     setTimeout(() => {

@@ -10,7 +10,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body data-username="{{ username }}" data-role="{{ role }}">
 
 <nav class="navbar navbar-dark bg-dark border-bottom border-secondary mb-4 py-3">
     <div class="container-fluid px-4">
@@ -98,17 +98,17 @@
                 </div>
                 <div class="card-body d-flex flex-column justify-content-center">
                     <p class="text-muted small mb-3">Single Transaction Simulation:</p>
-                    <button class="btn btn-outline-light mb-2 p-2 text-start" onclick="placeOrder('Espresso')">
+                    <button class="btn btn-outline-light mb-2 p-2 text-start" data-action="place" data-item="Espresso">
                         <i class="bi bi-cup-hot me-2"></i> Execute: Espresso
                     </button>
-                    <button class="btn btn-outline-light mb-3 p-2 text-start" onclick="placeOrder('Latte')">
+                    <button class="btn btn-outline-light mb-3 p-2 text-start" data-action="place" data-item="Latte">
                         <i class="bi bi-cup me-2"></i> Execute: Latte
                     </button>
 
                     <hr class="border-secondary my-3">
 
                     <p class="text-danger small mb-2 fw-bold"><i class="bi bi-exclamation-triangle-fill me-1"></i>Chaos Engineering:</p>
-                    <button class="btn btn-outline-danger p-3 text-start position-relative" id="btn-stress-test" onclick="simulatePeakHours()">
+                    <button class="btn btn-outline-danger p-3 text-start position-relative" id="btn-stress-test" data-action="stress">
                         <i class="bi bi-lightning-charge-fill fs-5 me-2"></i> Simulate Peak Load (50x)
                         <span class="position-absolute top-0 start-100 translate-middle p-2 bg-danger border border-light rounded-circle" id="stress-indicator" style="display: none;">
                             <span class="visually-hidden">Running...</span>
@@ -196,10 +196,6 @@
     {% endif %}
 </div>
 
-<script>
-    window.CURRENT_USERNAME = "{{ username }}";
-    window.CURRENT_ROLE = "{{ role }}";
-</script>
 <script src="/static/app.js"></script>
 </body>
 </html>

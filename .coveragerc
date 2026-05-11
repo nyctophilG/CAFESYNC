@@ -1,0 +1,32 @@
+[run]
+# Only measure our application code, not test files or third-party libs.
+source =
+    .
+omit =
+    tests/*
+    caf/*
+    env/*
+    */__pycache__/*
+    */site-packages/*
+    conftest.py
+    setup.py
+
+[report]
+# Lines that don't need coverage:
+#   - "if __name__ == ...": script entry points
+#   - "raise NotImplementedError": placeholders
+#   - "pragma: no cover": explicit opt-out
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+    pass
+
+# Show missing line numbers in the report so we know what to cover next.
+show_missing = True
+skip_covered = False
+
+# Fail the test run if coverage drops below this. We're targeting 90%.
+fail_under = 90
+
+precision = 1

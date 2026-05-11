@@ -1,10 +1,13 @@
 # main.py
+import os
 import time
+
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
+from slowapi.errors import RateLimitExceeded
 
 from database import (
     engine, Base, SessionLocal,
@@ -16,14 +19,39 @@ from routers import orders, telemetry, auth, users, twofa, passkeys
 from auth_utils import seed_initial_admin
 from routers.auth import SESSION_LIFETIME_LONG
 from roles import Role, DASHBOARD_ROLES, post_login_path
+from security import (
+    rate_limiter,
+    add_security_headers,
+    configure_error_handlers,
+    get_csrf_token,
+    HTTPS_ONLY,
+)
 
 Base.metadata.create_all(bind=engine)
 seed_initial_admin(ADMIN_USERNAME, ADMIN_PASSWORD)
 
 app = FastAPI(title="CafeSync API")
 
+# Attach the rate limiter to the app so SlowAPI's decorators work.
+app.state.limiter = rate_limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    """Return a generic 429 when someone hits a rate limit.
+    Doesn't reveal which limit they hit or how to bypass it."""
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests. Please wait a moment and try again."},
+    )
+
+
+# Generic error handler — hides stack traces in production.
+configure_error_handlers(app)
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
 
 # --- AUTH GATE ---
 PUBLIC_PATHS = {
@@ -31,17 +59,10 @@ PUBLIC_PATHS = {
     "/login/2fa",
     "/passkey/login/begin",
     "/passkey/login/complete",
+    "/csrf-token",  # JS needs to fetch this before authed requests
 }
 
 API_PREFIXES = ("/orders", "/telemetry", "/users", "/passkey")
-
-# UI paths and which roles may reach them. Keys = path, values = set of roles.
-# Anything not in this map is allowed for any authenticated user (e.g. /menu,
-# /2fa/setup, /security).
-RESTRICTED_UI_PATHS = {
-    "/dashboard": DASHBOARD_ROLES | {Role.BARISTA},  # admin, viewer, barista (each gets its own template)
-    "/": DASHBOARD_ROLES | {Role.BARISTA, Role.USER},  # everyone (we redirect by role below)
-}
 
 
 @app.middleware("http")
@@ -77,8 +98,6 @@ async def auth_gate_middleware(request: Request, call_next):
             return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
         return RedirectResponse(url="/login", status_code=302)
 
-    # Per-path role restrictions for UI routes. /dashboard for users sends
-    # them to /menu instead of 403 — better UX since /menu is THEIR home.
     if path == "/dashboard" and role == Role.USER:
         return RedirectResponse(url="/menu", status_code=302)
 
@@ -88,8 +107,9 @@ async def auth_gate_middleware(request: Request, call_next):
 # --- TELEMETRY ---
 TELEMETRY_EXCLUDED_PATHS = {
     "/health", "/dashboard", "/", "/login", "/logout", "/signup", "/menu",
-    "/login/2fa", "/2fa/setup",
+    "/login/2fa", "/2fa/setup", "/csrf-token",
 }
+
 
 @app.middleware("http")
 async def add_telemetry_middleware(request: Request, call_next):
@@ -119,14 +139,22 @@ async def add_telemetry_middleware(request: Request, call_next):
     return response
 
 
+# --- SECURITY HEADERS ---
+# Runs on every response. Cheap insurance against XSS, clickjacking, MIME
+# sniffing, leaked referrers, HTTPS downgrade.
+app.middleware("http")(add_security_headers)
+
+
 # --- SESSION MIDDLEWARE ---
+# https_only and samesite are tightened in production via HTTPS_ONLY env var.
+# Cookies are signed with SESSION_SECRET (itsdangerous library).
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET,
     session_cookie="cafesync_session",
     max_age=SESSION_LIFETIME_LONG,
-    same_site="lax",
-    https_only=False,  # Flip to True in production behind HTTPS.
+    same_site="strict" if HTTPS_ONLY else "lax",
+    https_only=HTTPS_ONLY,
 )
 
 
@@ -138,46 +166,47 @@ app.include_router(telemetry.router)
 app.include_router(users.router)
 
 
+# --- UI routes ---
+
 @app.get("/dashboard", response_class=HTMLResponse, tags=["UI"])
 async def render_dashboard(request: Request):
-    """Renders the right dashboard for the user's role.
-      admin   -> full dashboard.html
-      viewer  -> same dashboard.html, controls hidden
-      barista -> dashboard_barista.html (queue + serve only)
-      user    -> redirected to /menu by auth-gate middleware
-    """
+    """Renders the right dashboard for the user's role."""
     role = request.session.get("role", Role.USER)
     username = request.session.get("username", "")
 
     if role == Role.BARISTA:
         template = "dashboard_barista.html"
     else:
-        # admin or viewer — same template, role determines what's visible
         template = "dashboard.html"
 
     return templates.TemplateResponse(
         request=request,
         name=template,
-        context={"username": username, "role": role},
+        context={
+            "username": username,
+            "role": role,
+            "csrf_token": get_csrf_token(request),
+        },
     )
 
 
 @app.get("/menu", response_class=HTMLResponse, tags=["UI"])
 async def render_menu(request: Request):
-    """The customer-facing menu. Any authenticated user can browse;
-    viewers see it without 'Place Order' buttons (handled in template + JS)."""
     role = request.session.get("role", Role.USER)
     username = request.session.get("username", "")
     return templates.TemplateResponse(
         request=request,
         name="menu.html",
-        context={"username": username, "role": role},
+        context={
+            "username": username,
+            "role": role,
+            "csrf_token": get_csrf_token(request),
+        },
     )
 
 
 @app.get("/", include_in_schema=False)
 def root_redirect(request: Request):
-    """Send each role to the right home."""
     role = request.session.get("role")
     if not role:
         return RedirectResponse(url="/login")
@@ -187,3 +216,15 @@ def root_redirect(request: Request):
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "service": "CafeSync Core"}
+
+
+@app.get("/csrf-token", tags=["Security"])
+async def get_csrf_token_endpoint(request: Request):
+    """JS clients fetch this once at page load to get a CSRF token they
+    can include in subsequent state-changing requests as X-CSRF-Token.
+
+    Public path (no auth) so even the /login page can grab a token before
+    the user has a session — useful if we ever protect /login with CSRF
+    (we don't currently, since brute-force is handled by rate limit).
+    """
+    return {"csrf_token": get_csrf_token(request)}

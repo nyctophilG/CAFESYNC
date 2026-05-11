@@ -9,10 +9,12 @@ import schemas
 from database import get_db
 from auth_utils import get_current_user, require_fulfillment
 from roles import Role, DASHBOARD_ROLES, ORDER_FULFILLMENT_ROLES
+from security import require_csrf
 
 router = APIRouter(
     prefix="/orders",
-    tags=["Cafe Orders"]
+    tags=["Cafe Orders"],
+    dependencies=[Depends(require_csrf)],
 )
 
 

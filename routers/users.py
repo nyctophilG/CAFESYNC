@@ -14,11 +14,12 @@ import schemas
 from database import get_db
 from auth_utils import require_admin
 from roles import Role
+from security import require_csrf
 
 router = APIRouter(
     prefix="/users",
     tags=["User Management"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin), Depends(require_csrf)],
 )
 
 

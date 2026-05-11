@@ -5,8 +5,30 @@ const IS_ADMIN  = window.CURRENT_ROLE === "admin";
 
 let latencyChartInstance = null;
 
+// Read the CSRF token injected into the page by the server. The token
+// is rendered into a <meta name="csrf-token"> tag in the template head.
+function getCsrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute("content") : "";
+}
+
+const MUTATING_METHODS = new Set(["POST", "PUT", "DELETE", "PATCH"]);
+
 async function authedFetch(url, options) {
-    const response = await fetch(url, { credentials: "same-origin", ...(options || {}) });
+    const opts = { credentials: "same-origin", ...(options || {}) };
+    const method = (opts.method || "GET").toUpperCase();
+
+    // Attach CSRF token to state-changing requests. The server's CSRF
+    // dependency reads X-CSRF-Token from the headers and compares it
+    // against the value stored in the session.
+    if (MUTATING_METHODS.has(method)) {
+        opts.headers = {
+            ...(opts.headers || {}),
+            "X-CSRF-Token": getCsrfToken(),
+        };
+    }
+
+    const response = await fetch(url, opts);
     if (response.status === 401) {
         window.location.href = "/login";
         throw new Error("Session expired");

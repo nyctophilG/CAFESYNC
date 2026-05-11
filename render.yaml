@@ -1,0 +1,61 @@
+# render.yaml
+# Render "Blueprint" file: tells Render how to build and run the service.
+# With this in the repo root, "New Web Service" on Render auto-detects
+# everything; you just connect your GitHub repo and click deploy.
+#
+# Free tier specs:
+#   - 512 MB RAM, 0.1 CPU
+#   - Spins down after 15 min idle (cold start ~30-60s after that)
+#   - HTTPS by default at https://<service-name>.onrender.com
+#   - Auto-deploys on every push to the main branch
+#
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: cafesync
+    runtime: docker
+    # Free tier — explicit so we don't accidentally provision paid resources.
+    plan: free
+    # Auto-deploy on every push to main. Toggle to false if you want manual deploys.
+    autoDeploy: true
+    # Health check path — Render hits this periodically to keep the service alive.
+    # Our /health endpoint is public (no auth) and lightweight.
+    healthCheckPath: /health
+    # Region: oregon is the default and has the fastest cold starts on free tier.
+    # Use frankfurt if your grader is in Europe and you want lower latency.
+    region: oregon
+
+    envVars:
+      # Tells our app that we're behind HTTPS — flips on HSTS header,
+      # secure cookies, and strict same-site cookies.
+      - key: HTTPS_ONLY
+        value: "1"
+
+      # Where SQLite lives. The free tier has writable disk in /tmp but it's
+      # ephemeral across redeploys. We put the DB in /tmp/data on each boot;
+      # for the demo this is fine since we just need it to persist within
+      # a single deploy.
+      - key: DB_PATH
+        value: /tmp/cafesync.db
+
+      # WebAuthn relying party config. Render assigns the hostname
+      # <service-name>.onrender.com — you'll need to update RP_ID to match
+      # your actual deployed URL. Or leave it as a placeholder and fix in
+      # the Render dashboard after first deploy.
+      - key: RP_ID
+        sync: false  # Will be set manually in Render dashboard
+      - key: WEBAUTHN_ORIGINS
+        sync: false  # Will be set manually in Render dashboard
+      - key: RP_NAME
+        value: CafeSync
+
+      # Secrets — sync:false means "don't store this in render.yaml, set
+      # it manually in the Render dashboard". This is the right pattern
+      # for any value that shouldn't be in version control.
+      - key: SESSION_SECRET
+        sync: false
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

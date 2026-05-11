@@ -1,0 +1,49 @@
+# --- Version control ---
+.git/
+.gitignore
+
+# --- Local development ---
+.env
+.env.local
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# --- Tests (don't ship to production) ---
+tests/
+pytest.ini
+.coveragerc
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+conftest.py
+requirements-dev.txt
+
+# --- Python build artifacts ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# --- IDE configs ---
+.vscode/
+.idea/
+*.swp
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- Docker self ---
+Dockerfile
+.dockerignore
+
+# --- Documentation we don't need in the image ---
+README.md
+SECURITY.md

@@ -10,7 +10,7 @@ import models
 from database import get_db
 from auth_utils import authenticate_user, hash_password, BCRYPT_MAX_BYTES
 from roles import Role, post_login_path
-from security import rate_limiter
+from security import rate_limiter, is_localhost
 
 router = APIRouter(tags=["Authentication"])
 templates = Jinja2Templates(directory="templates")
@@ -41,7 +41,7 @@ async def login_page(request: Request):
 # Rate limit: 5 login attempts per minute per IP. Stops brute force without
 # being too aggressive against a clumsy real user retrying their password.
 @router.post("/login", response_class=HTMLResponse, include_in_schema=False)
-@rate_limiter.limit("5/minute")
+@rate_limiter.limit("5/minute", exempt_when=is_localhost)
 async def login_submit(
     request: Request,
     username: str = Form(...),
@@ -92,7 +92,7 @@ async def signup_page(request: Request):
 
 # Rate limit: 3 signups per minute per IP. Slows mass account creation.
 @router.post("/signup", response_class=HTMLResponse, include_in_schema=False)
-@rate_limiter.limit("3/minute")
+@rate_limiter.limit("3/minute", exempt_when=is_localhost)
 async def signup_submit(
     request: Request,
     username: str = Form(...),

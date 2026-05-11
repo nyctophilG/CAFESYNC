@@ -34,6 +34,18 @@ def _client_key(request: Request) -> str:
     return get_remote_address(request)
 
 
+def is_localhost(request: Request) -> bool:
+    """True if the request originates from localhost. Used as exempt_when
+    on rate-limit decorators so dev / e2e tests don't trip limits."""
+    fly_ip = request.headers.get("fly-client-ip")
+    if fly_ip:
+        # In production behind fly.io, the edge always sets this header.
+        # Real clients have public IPs here, never 127.0.0.1.
+        return fly_ip in {"127.0.0.1", "::1"}
+    raw_ip = get_remote_address(request)
+    return raw_ip in {"127.0.0.1", "localhost", "::1"}
+
+
 # Single shared limiter instance. In-memory storage works for a single
 # process; if we scale to multiple instances we'd switch to Redis.
 #

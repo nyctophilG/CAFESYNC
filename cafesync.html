@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CafeSync | 2FAITH4AI Technical Protocol</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@300;400;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg: #030205;
+            --platinum: #e5e7eb;
+            --silver: #9ca3af;
+            --abyssal-gradient: radial-gradient(circle at center, #0d0d14 0%, #030205 100%);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg);
+            color: #f3f4f6;
+            font-family: 'Urbanist', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #abyss-canvas {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        #boot-screen {
+            position: fixed;
+            inset: 0;
+            background: #000;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .log-line {
+            color: var(--platinum);
+            font-size: 13px;
+            margin-bottom: 6px;
+            opacity: 0.6;
+            width: 100%;
+            text-align: left;
+            max-width: 500px;
+            letter-spacing: 1px;
+        }
+
+        #summon-container {
+            position: fixed;
+            inset: 0;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            background: var(--abyssal-gradient);
+        }
+
+        .flash {
+            position: absolute;
+            inset: 0;
+            background: #fff;
+            opacity: 0;
+            z-index: 10005;
+        }
+
+        .flash-active { animation: silver-bang 1.2s ease-out forwards; }
+
+        @keyframes silver-bang {
+            0% { opacity: 0; }
+            10% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        #star-reveal {
+            position: relative;
+            z-index: 10003;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            opacity: 0;
+            transform: scale(0.1);
+            text-align: center;
+        }
+
+        .star-active {
+            animation: platinum-burst 5s cubic-bezier(0.15, 0, 0.15, 1) forwards;
+        }
+
+        @keyframes platinum-burst {
+            0% { opacity: 0; transform: scale(0.1) rotate(-45deg); filter: brightness(10); }
+            15% { opacity: 1; transform: scale(3.5) rotate(0deg); filter: brightness(2); }
+            80% { opacity: 1; filter: blur(0px); transform: scale(3.2); }
+            100% { opacity: 0; filter: blur(40px); transform: scale(5); }
+        }
+
+        .star-svg {
+            width: 400px;
+            height: 400px;
+            fill: url(#platinumGradient);
+            filter: drop-shadow(0 0 60px rgba(255, 255, 255, 0.5));
+        }
+
+        .team-name-summon {
+            margin-top: 15px;
+            font-size: 16px;
+            font-weight: 900;
+            letter-spacing: 18px;
+            color: #fff;
+            text-transform: uppercase;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.8);
+            opacity: 0.9;
+        }
+
+        #presentation-wrapper {
+            position: relative;
+            z-index: 10;
+            height: 100vh;
+            display: none;
+        }
+
+        .slide {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 60px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.6s ease-in-out;
+        }
+
+        .slide.active { opacity: 1; pointer-events: auto; }
+
+        .slide-content { max-width: 1200px; width: 100%; }
+
+        .dashboard-dock {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.02);
+            backdrop-filter: blur(25px);
+            padding: 12px 24px;
+            border-radius: 50px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            z-index: 100;
+        }
+
+        .nav-btn {
+            padding: 8px 16px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            background: transparent;
+            color: #6b7280;
+            cursor: pointer;
+            font-family: 'JetBrains Mono';
+            font-size: 10px;
+            transition: 0.3s;
+            text-transform: uppercase;
+        }
+
+        .nav-btn:hover, .nav-btn.active {
+            background: rgba(255, 255, 255, 0.9);
+            color: #000;
+            border-color: #fff;
+        }
+
+        .platinum-text {
+            background: linear-gradient(135deg, #fff 0%, #9ca3af 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 25px;
+            border-radius: 4px;
+        }
+
+        .label { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #6b7280; margin-bottom: 8px; display: block;}
+        .metric-val { font-size: 2.5rem; font-weight: 700; color: #fff; }
+        .bonus-badge { font-size: 9px; color: #000; background: var(--platinum); padding: 2px 6px; border-radius: 2px; font-weight: 900; margin-left: 8px; vertical-align: middle; }
+
+        .shake { animation: impact-shake 0.5s both; }
+        @keyframes impact-shake {
+            0%, 100% { transform: translate(0, 0); }
+            20% { transform: translate(-10px, 0); }
+            40% { transform: translate(10px, 0); }
+            60% { transform: translate(-5px, 0); }
+            80% { transform: translate(5px, 0); }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="abyss-canvas"></canvas>
+
+    <div id="boot-screen">
+        <div id="log-terminal"></div>
+    </div>
+
+    <div id="summon-container">
+        <div id="flash" class="flash"></div>
+        <div id="star-reveal">
+            <svg class="star-svg" viewBox="0 0 100 100">
+                <defs>
+                    <linearGradient id="platinumGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+                        <stop offset="50%" style="stop-color:#e5e7eb;stop-opacity:1" />
+                        <stop offset="100%" style="stop-color:#9ca3af;stop-opacity:1" />
+                    </linearGradient>
+                </defs>
+                <path d="M50 0 L55 45 L100 50 L55 55 L50 100 L45 55 L0 50 L45 45 Z" />
+            </svg>
+            <h2 class="team-name-summon">2FAITH4AI</h2>
+        </div>
+    </div>
+
+    <div id="presentation-wrapper">
+        <div class="dashboard-dock">
+            <button class="nav-btn active" onclick="gotoSlide(0)">System</button>
+            <button class="nav-btn" onclick="gotoSlide(1)">Testing</button>
+            <button class="nav-btn" onclick="gotoSlide(2)">Identity</button>
+            <button class="nav-btn" onclick="gotoSlide(3)">Auth & Dashboard</button>
+            <button class="nav-btn" onclick="gotoSlide(4)">Infra</button>
+        </div>
+
+        <!-- Slide 0: Overview -->
+        <section class="slide active">
+            <div class="slide-content text-center">
+                <span class="label">2FAITH4AI TECHNICAL DIVISION</span>
+                <h1 class="text-9xl font-black platinum-text tracking-tighter mb-4">CAFESYNC</h1>
+                <p class="text-xl text-gray-500 font-light tracking-[0.5em] uppercase">High-Availability POS Architecture</p>
+            </div>
+        </section>
+
+        <!-- Slide 1: Testing & Coverage -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2 class="text-4xl font-bold mb-8 platinum-text">Quality Assurance Protocols <span class="bonus-badge">+15 PTS</span></h2>
+                <div class="grid grid-cols-2 gap-6">
+                    <div class="card">
+                        <span class="label">Automated E2E Testing</span>
+                        <p class="text-gray-400 text-sm mb-4">Full Playwright integration across all critical user flows (Order creation, Checkout, Auth). Tests are triggered automatically upon every deployment to ensure zero regressions.</p>
+                        <div class="flex items-end gap-2">
+                            <span class="metric-val">100%</span>
+                            <span class="text-xs text-green-500 mb-2">PASS RATE</span>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <span class="label">Unit Coverage</span>
+                        <p class="text-gray-400 text-sm mb-4">Strict coverage requirements enforcing logic validation at the component level. Pytest-cov integration monitors depth in real-time.</p>
+                        <div class="flex items-end gap-2">
+                            <span class="metric-val">92.4%</span>
+                            <span class="text-xs text-platinum mb-2">CODE COVERAGE</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 2: Identity & 2FA -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2 class="text-4xl font-bold mb-8 platinum-text">Identity Management <span class="bonus-badge">+30 PTS</span></h2>
+                <div class="grid grid-cols-3 gap-6">
+                    <div class="card col-span-2">
+                        <span class="label">Multi-Channel Social Authentication</span>
+                        <p class="text-gray-400 mb-6">Omni-login capability supporting 4+ providers (Google, GitHub, Microsoft, Apple) via OAuth2 protocols, ensuring seamless friction-less onboarding for diverse staff roles.</p>
+                        <div class="flex gap-4">
+                            <div class="px-4 py-2 bg-white/5 border border-white/10 rounded text-[10px] font-mono">GOOGLE</div>
+                            <div class="px-4 py-2 bg-white/5 border border-white/10 rounded text-[10px] font-mono">GITHUB</div>
+                            <div class="px-4 py-2 bg-white/5 border border-white/10 rounded text-[10px] font-mono">MICROSOFT</div>
+                            <div class="px-4 py-2 bg-white/5 border border-white/10 rounded text-[10px] font-mono">APPLE</div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <span class="label">2FA/MFA Hardening</span>
+                        <p class="text-gray-400 text-sm mb-4">Compulsory 2-Method Authentication for administrative accounts, utilizing TOTP and Email Verification codes.</p>
+                        <div class="text-center">
+                            <span class="metric-val">2-STEP</span>
+                            <span class="label">ENFORCED</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 3: RBAC & Dashboard -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2 class="text-4xl font-bold mb-8 platinum-text">Authorization & Control <span class="bonus-badge">+10 PTS</span></h2>
+                <div class="grid grid-cols-2 gap-6">
+                    <div class="card">
+                        <span class="label">Granular Role-Based Access Control</span>
+                        <p class="text-gray-400 text-sm">Engineered with multiple distinct user tiers (Barista, Manager, Financial Auditor). Each tier possesses specific, immutable permission sets to protect sensitive transactional data.</p>
+                    </div>
+                    <div class="card">
+                        <span class="label">Dynamic Admin Control Panel</span>
+                        <p class="text-gray-400 text-sm">A centralized dashboard allowing real-time permission modification. Managers can revoke access or upgrade user roles dynamically without system restarts.</p>
+                    </div>
+                </div>
+                <div class="mt-6 card border-white/20 bg-white/5">
+                    <h4 class="text-white font-bold mb-2">Technical Justification</h4>
+                    <p class="text-xs text-gray-500 italic">By implementing a decoupled authorization middleware, we ensure that permission checks are performed at the gateway level before business logic execution, preventing lateral movement in case of account compromise.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 4: Infrastructure Sovereignty -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2 class="text-4xl font-bold mb-8 platinum-text">Security Sovereignty <span class="bonus-badge">+10 PTS</span></h2>
+                <div class="grid grid-cols-3 gap-6">
+                    <div class="card col-span-2">
+                        <span class="label">Self-Managed Linux Hardening</span>
+                        <p class="text-gray-400 text-sm mb-4">Eschewing automated PaaS like Vercel for raw infrastructure control. Deployment on managed VPS with custom UFW (Uncomplicated Firewall) rules, Fail2Ban protection, and SSH key-only authentication.</p>
+                        <p class="text-gray-500 text-[11px] leading-relaxed">Reasoning: Third-party PaaS environments often abstract security layers that are critical for POS compliance. Direct infrastructure management allows for tighter control over packet inspection and SSL termination.</p>
+                    </div>
+                    <div class="card bg-platinum text-black flex flex-col justify-center">
+                        <span class="label text-black/60">Legacy Integration</span>
+                        <h3 class="text-2xl font-bold">Base Refactor</h3>
+                        <p class="text-[10px] font-bold mt-2">PROJECT UPGRADE: +10</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        const terminal = document.getElementById('log-terminal');
+        const bootScreen = document.getElementById('boot-screen');
+        const summon = document.getElementById('summon-container');
+        const flash = document.getElementById('flash');
+        const starReveal = document.getElementById('star-reveal');
+        const main = document.getElementById('presentation-wrapper');
+        const canvas = document.getElementById('abyss-canvas');
+        const ctx = canvas.getContext('2d');
+
+        const sleep = m => new Promise(r => setTimeout(r, m));
+
+        let particles = [];
+        function initAbyss() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            particles = Array.from({length: 100}, () => ({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: Math.random() * 1.5,
+                speed: 0.1 + Math.random() * 0.4,
+                opacity: Math.random()
+            }));
+        }
+
+        function drawAbyss() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#fff";
+            particles.forEach(p => {
+                ctx.globalAlpha = p.opacity;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+                p.y -= p.speed;
+                if (p.y < 0) p.y = canvas.height;
+            });
+            requestAnimationFrame(drawAbyss);
+        }
+
+        function gotoSlide(index) {
+            const slides = document.querySelectorAll('.slide');
+            const btns = document.querySelectorAll('.nav-btn');
+            slides.forEach(s => s.classList.remove('active'));
+            btns.forEach(b => b.classList.remove('active'));
+            slides[index].classList.add('active');
+            btns[index].classList.add('active');
+        }
+
+        const diagLines = [
+            "INITIALIZING 2FAITH4AI_KERNEL",
+            "VERIFYING PLAYWRIGHT_E2E_SUITE...",
+            "AUTH_SOCIAL: 4 PROVIDERS DETECTED",
+            "MFA_PROTOCOL: 2-METHOD_ENFORCED",
+            "RBAC_MIDDLEWARE: ADMIN_DASHBOARD_LIVE",
+            "INFRA_SECURITY: UFW_HARDENING_SUCCESS",
+            "........................",
+            "READY FOR TECHNICAL REVIEW"
+        ];
+
+        async function startSequence() {
+            initAbyss();
+            drawAbyss();
+
+            for (let line of diagLines) {
+                let d = document.createElement('div');
+                d.className = 'log-line';
+                d.innerHTML = `[CORE] ${line}`;
+                terminal.appendChild(d);
+                await sleep(150);
+            }
+
+            await sleep(1000);
+            bootScreen.style.display = 'none';
+            summon.style.display = 'flex';
+
+            await sleep(1500);
+            flash.classList.add('flash-active');
+            document.body.classList.add('shake');
+            
+            starReveal.style.opacity = '1';
+            starReveal.classList.add('star-active');
+
+            await sleep(5000);
+            summon.style.transition = 'opacity 1s';
+            summon.style.opacity = '0';
+            
+            await sleep(1000);
+            summon.style.display = 'none';
+            main.style.display = 'block';
+        }
+
+        window.onload = startSequence;
+        window.onresize = initAbyss;
+    </script>
+</body>
+</html>

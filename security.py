@@ -148,43 +148,64 @@ async def require_csrf(request: Request):
 HTTPS_ONLY = os.environ.get("HTTPS_ONLY", "0") == "1"
 
 
-# CSP: tells the browser which sources are allowed for scripts, styles,
-# images, fetch URLs. Drastically reduces XSS impact even if injection
-# slips through somewhere.
-#
-# 'self' = same origin. We allow our Bootstrap CDN explicitly because the
-# templates load CSS/JS from cdn.jsdelivr.net.
-# 'unsafe-inline' for styles is needed because Bootstrap uses inline styles
-# in components. We do NOT allow unsafe-inline for scripts — that's the
-# bigger risk for XSS.
-CSP_DIRECTIVES = [
-    "default-src 'self'",
-    "script-src 'self' https://cdn.jsdelivr.net",
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
-    "font-src 'self' https://cdn.jsdelivr.net data:",
-    "img-src 'self' data:",
-    "connect-src 'self'",
-    "frame-ancestors 'none'",  # equivalent to X-Frame-Options: DENY
-    "base-uri 'self'",
-    "form-action 'self'",
-]
-CSP_HEADER = "; ".join(CSP_DIRECTIVES)
+def get_csp_nonce(request: Request) -> str:
+    """Get the per-request CSP nonce. Generated once per request by the
+    security headers middleware and stashed on request.state. Templates
+    pass this to every <script> tag they render: <script nonce="{{ nonce }}">.
+
+    Inline scripts with the matching nonce are allowed; injected scripts
+    (via XSS) won't have it and the browser blocks them.
+    """
+    return getattr(request.state, "csp_nonce", "")
+
+
+def _build_csp(nonce: str) -> str:
+    """Build the CSP header string including a per-request nonce.
+
+    script-src includes 'nonce-<value>' so our inline scripts with
+    nonce="<value>" can execute. We also allow 'self' (for /static/*.js)
+    and the jsdelivr CDN (for Bootstrap, Chart.js).
+
+    NOTE: we intentionally do NOT include 'strict-dynamic'. That keyword
+    has the side effect of disabling host allowlisting — only nonced
+    scripts would work, which would block our external <script src="...">
+    tags unless we nonced every one. Sticking to host allowlisting +
+    nonces is simpler and equally safe for our threat model.
+    """
+    return "; ".join([
+        "default-src 'self'",
+        f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net",
+        # 'unsafe-inline' for STYLES is OK — much less risk than scripts.
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+        "font-src 'self' https://cdn.jsdelivr.net data:",
+        "img-src 'self' data:",
+        # cdn.jsdelivr.net included for Bootstrap's source map fetch.
+        "connect-src 'self' https://cdn.jsdelivr.net",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+    ])
 
 
 async def add_security_headers(request: Request, call_next):
-    """Middleware that attaches security headers to every response."""
+    """Middleware that attaches security headers to every response.
+
+    Generates a fresh CSP nonce per request and stashes it on
+    request.state.csp_nonce so templates can read it via get_csp_nonce().
+    """
+    # Generate the nonce BEFORE call_next, since templates need it.
+    nonce = secrets.token_urlsafe(16)
+    request.state.csp_nonce = nonce
+
     response = await call_next(request)
 
-    response.headers["Content-Security-Policy"] = CSP_HEADER
+    response.headers["Content-Security-Policy"] = _build_csp(nonce)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
 
     if HTTPS_ONLY:
-        # HSTS — tells browsers to only ever use HTTPS for this domain.
-        # Only set when we're actually serving over HTTPS, otherwise dev
-        # localhost breaks. max-age = 1 year is the standard recommendation.
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
     return response

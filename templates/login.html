@@ -138,7 +138,7 @@
 </div>
 
 <script src="/static/passkey.js"></script>
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
     const passkeyBtn = document.getElementById('passkey-btn');
     const errEl = document.getElementById('passkey-error');
     const errText = document.getElementById('passkey-error-text');

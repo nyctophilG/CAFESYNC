@@ -24,6 +24,7 @@ from security import (
     add_security_headers,
     configure_error_handlers,
     get_csrf_token,
+    get_csp_nonce,
     HTTPS_ONLY,
 )
 
@@ -186,6 +187,7 @@ async def render_dashboard(request: Request):
             "username": username,
             "role": role,
             "csrf_token": get_csrf_token(request),
+            "csp_nonce": get_csp_nonce(request),
         },
     )
 
@@ -201,6 +203,7 @@ async def render_menu(request: Request):
             "username": username,
             "role": role,
             "csrf_token": get_csrf_token(request),
+            "csp_nonce": get_csp_nonce(request),
         },
     )
 

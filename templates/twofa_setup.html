@@ -114,7 +114,7 @@
                 </div>
                 {% endfor %}
             </div>
-            <button class="btn btn-sm btn-outline-light" onclick="copyAllCodes()">
+            <button class="btn btn-sm btn-outline-light" id="copy-codes-btn">
                 <i class="bi bi-clipboard me-1"></i>Copy all
             </button>
             <a href="/2fa/setup" class="btn btn-sm btn-success ms-2">
@@ -122,11 +122,15 @@
             </a>
         </div>
     </div>
-    <script>
+    <script nonce="{{ request.state.csp_nonce }}">
         function copyAllCodes() {
             const codes = {{ fresh_codes | tojson }};
             navigator.clipboard.writeText(codes.join('\n'));
         }
+        document.addEventListener('DOMContentLoaded', () => {
+            const btn = document.getElementById('copy-codes-btn');
+            if (btn) btn.addEventListener('click', copyAllCodes);
+        });
     </script>
     {% endif %}
 
@@ -225,7 +229,7 @@
 </div>
 
 <script src="/static/passkey.js"></script>
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
     // ============= Passkey UI logic =============
     const supportBadge = document.getElementById('passkey-support-badge');
     const listEl = document.getElementById('passkey-list');
@@ -266,7 +270,10 @@
                         <strong>${escapeHtml(pk.name)}</strong>
                         <small class="text-muted ms-2">added ${new Date(pk.created_at).toLocaleDateString()}</small>
                     </div>
-                    <button class="btn btn-sm btn-outline-danger" onclick="deletePasskey(${pk.id}, '${escapeHtml(pk.name)}')">
+                    <button class="btn btn-sm btn-outline-danger"
+                            data-action="delete-passkey"
+                            data-passkey-id="${pk.id}"
+                            data-passkey-name="${escapeHtml(pk.name)}">
                         <i class="bi bi-trash"></i>
                     </button>
                 </div>
@@ -312,6 +319,16 @@
         }
     }
     window.deletePasskey = deletePasskey;
+
+    // Event delegation: catch clicks on dynamically-rendered delete buttons.
+    // We can't use inline onclick= because of CSP, so we listen at a parent.
+    listEl.addEventListener('click', (e) => {
+        const btn = e.target.closest("[data-action='delete-passkey']");
+        if (!btn) return;
+        const id = parseInt(btn.dataset.passkeyId, 10);
+        const name = btn.dataset.passkeyName;
+        deletePasskey(id, name);
+    });
 
     loadPasskeys();
 </script>

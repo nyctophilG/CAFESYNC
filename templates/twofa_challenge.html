@@ -123,7 +123,7 @@
 
             <div class="text-center mt-3">
                 <small class="text-muted">
-                    <button type="button" class="toggle-link" onclick="toggleForm()" id="toggle-btn">
+                    <button type="button" class="toggle-link" id="toggle-btn">
                         Use a backup code instead
                     </button>
                 </small>
@@ -140,7 +140,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
     let showingBackup = false;
     function toggleForm() {
         showingBackup = !showingBackup;
@@ -154,6 +154,11 @@
             .querySelector('input[name="code"]');
         if (visibleInput) visibleInput.focus();
     }
+    // Wire the toggle button via addEventListener (CSP-safe).
+    document.addEventListener('DOMContentLoaded', () => {
+        const btn = document.getElementById('toggle-btn');
+        if (btn) btn.addEventListener('click', toggleForm);
+    });
 </script>
 
 </body>

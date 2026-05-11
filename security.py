@@ -26,24 +26,24 @@ from slowapi.util import get_remote_address
 
 def _client_key(request: Request) -> str:
     """Identify the client for rate limiting.
-    Prefers Fly-Client-IP (set by fly.io's edge), falls back to direct IP.
+
+    Strategy:
+      - Behind fly.io: use Fly-Client-IP header (real client IP).
+      - Local development: return a unique key per request so the
+        rate limiter never matches the same bucket twice → never trips.
+        Real attackers can't be on 127.0.0.1 unless they already own
+        the server, at which point we have bigger problems.
     """
     fly_ip = request.headers.get("fly-client-ip")
     if fly_ip:
         return fly_ip
-    return get_remote_address(request)
-
-
-def is_localhost(request: Request) -> bool:
-    """True if the request originates from localhost. Used as exempt_when
-    on rate-limit decorators so dev / e2e tests don't trip limits."""
-    fly_ip = request.headers.get("fly-client-ip")
-    if fly_ip:
-        # In production behind fly.io, the edge always sets this header.
-        # Real clients have public IPs here, never 127.0.0.1.
-        return fly_ip in {"127.0.0.1", "::1"}
     raw_ip = get_remote_address(request)
-    return raw_ip in {"127.0.0.1", "localhost", "::1"}
+    if raw_ip in {"127.0.0.1", "localhost", "::1"}:
+        # Per-request unique key — guarantees no two localhost requests
+        # share a rate limit bucket, so dev/test never hits the limit.
+        # secrets.token_hex is fast enough to call per-request.
+        return f"localhost-{secrets.token_hex(8)}"
+    return raw_ip
 
 
 # Single shared limiter instance. In-memory storage works for a single

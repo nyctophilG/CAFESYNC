@@ -15,7 +15,7 @@ from auth_utils import (
     generate_backup_codes, hash_backup_code, consume_backup_code,
 )
 from roles import post_login_path
-from security import rate_limiter, is_localhost
+from security import rate_limiter
 
 router = APIRouter(tags=["Two-Factor Auth"])
 templates = Jinja2Templates(directory="templates")
@@ -72,7 +72,7 @@ async def begin_setup(
 
 
 @router.post("/2fa/confirm", include_in_schema=False)
-@rate_limiter.limit("5/minute", exempt_when=is_localhost)
+@rate_limiter.limit("5/minute")
 async def confirm_setup(
     request: Request,
     code: str = Form(...),
@@ -195,7 +195,7 @@ async def challenge_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/login/2fa", response_class=HTMLResponse, include_in_schema=False)
-@rate_limiter.limit("5/minute", exempt_when=is_localhost)
+@rate_limiter.limit("5/minute")
 async def challenge_submit(
     request: Request,
     code: str = Form(...),
